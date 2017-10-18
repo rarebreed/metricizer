@@ -1,0 +1,23 @@
+{
+  "name": "cimetrics",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "rxjs": "^5.4.3",
+    "unirest": "^0.5.1",
+    "xml2js": "^0.4.19"
+  },
+  "devDependencies": {
+    "ava": "^0.22.0",
+    "babel-cli": "^6.26.0",
+    "babel-core": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
+    "babel-preset-flow": "^6.23.0",
+    "flow-bin": "^0.57.3",
+    "flow-typed": "^2.2.0"
+  },
+  "scripts": {
+    "build": "babel src -d lib/src --source-maps inline"
+  }
+}

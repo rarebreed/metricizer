@@ -1,0 +1,3 @@
+/**@flow
+ * Tests for cimetrics
+ */
