@@ -14,7 +14,7 @@ function getEnv(name: string): ?string {
     return s
 }
 
-type Arch = "aarch64" | "x8664" | "s390" | "ppc64" | "ppc64le"
+type Arch = "aarch64" | "x8664" | "x86_64" | "s390" | "ppc64" | "ppc64le"
 
 type MetricsTest = { executor: "beaker" | "CI-OSP"
                    , arch: Arch
@@ -117,7 +117,8 @@ type StreamResult<T> = {
  * 
  * @param {*} xml$ 
  */
-function calculateResults(xml$: Rx.Observable<StreamResult<TestValue>>) {
+function calculateResults( xml$: Rx.Observable<string> )
+                         : Rx.Observable<StreamResult<TestValue>> {
     // xml$ contains the XML as a string.  concat the result of this with x2j.parseString to get the JSON version
     return xml$.concatMap(s => {
             let r$ = Rx.Observable.bindCallback(x2j.parseString)
@@ -174,15 +175,34 @@ function getTriggerType(job: string, pw: string): Rx.Observable<StreamResult<num
     // Filter out actions that don't have a cause field, then for each action with a cause, check the cause object for shortDescription
     // If the length of this filter is greater than 1, then this job was triggered by 
     return req$().map(j => {
-        let causes = j.actions.filter(i => i.causes != null)
-        return causes.filter(i => i.shortDescription == "Triggered by CI Message").map(res => {
-            return {
-                value: res.length,
-                type: "trigger"
-            }
+        let causes = j.body.actions.filter(i => i.causes != null)
+        return causes
+            .filter(i => i.shortDescription != "Triggered by CI message")
+            .map(res => {
+                return {
+                    value: res.shortDescription,
+                    type: "trigger"
+                }
+            })
         })
+}
+
+import * as R from "ramda"
+
+function testTriggerType() {
+    let exampleJob = "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/api/json?pretty=true"
+    let trigger$ = getTriggerType(exampleJob, "334c628e5e5df90ae0fabb77db275c54")
+    trigger$.subscribe(i => {
+        if (i.length == 0) {
+            console.error("Expected at least one trigger by CI")
+            return
+        }
+        let triggers = R.takeWhile((t => t.value == "Triggered by CI message"), i)
+        if (triggers)
+            console.log("At least one cause from Trigger by CI message")
     })
 }
+
 
 type Path = string
 type CIMessageResult = {
@@ -236,17 +256,6 @@ module.exports = {
     getEnv: getEnv,
     calculateResults: calculateResults,
     getTestNGXML: getTestNGXML,
-    getTriggerType: getTriggerType
+    getTriggerType: getTriggerType,
+    getFile: getFile
 };
-
-function test() {
-    let f$ = getFile("testng-polarion.xml")
-    calculateResults(f$).subscribe({
-        next: n => {
-            console.log(n.total)
-            console.log(n.props)
-        }
-    })
-}
-
-//test()
