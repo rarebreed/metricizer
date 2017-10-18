@@ -18,6 +18,8 @@
     "flow-typed": "^2.2.0"
   },
   "scripts": {
-    "build": "babel src -d lib/src --source-maps inline"
+    "build": "babel src -d lib/src --source-maps inline && babel test -d lib/test --source-maps inline",
+    "build-test": "babel test -d lib/test --source-maps inline",
+    "test": "ava"
   }
 }

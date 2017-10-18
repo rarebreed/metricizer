@@ -1,5 +1,5 @@
 {
-    "presets": ["flow"],
+    "presets": ["flow", "env"],
     "sourceMaps": true,
     "retainLines": false
 }

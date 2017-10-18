@@ -102,12 +102,22 @@ type Property = {
     value: string
 }
 
+type TestValue = {
+    total: Calculated,
+    props: any
+}
+
+type StreamResult<T> = {
+    type: "ci-message" | "trigger" | "test-results",
+    value: T
+}
+
 /**
  * Given a stream representing a testng-polarion.xml file, convert it to a json equivalent and tally up what's needed
  * 
  * @param {*} xml$ 
  */
-function calculateResults(xml$: Rx.Observable<{}>) {
+function calculateResults(xml$: Rx.Observable<StreamResult<TestValue>>) {
     // xml$ contains the XML as a string.  concat the result of this with x2j.parseString to get the JSON version
     return xml$.concatMap(s => {
             let r$ = Rx.Observable.bindCallback(x2j.parseString)
@@ -140,8 +150,11 @@ function calculateResults(xml$: Rx.Observable<{}>) {
             })
 
             return {
-                total: total,
-                props: props
+                type: "test-results",
+                value: {
+                    total: total,
+                    props: props
+                }
             }
         })
 }
@@ -152,7 +165,7 @@ function calculateResults(xml$: Rx.Observable<{}>) {
  * @param {*} job (eg https://jenkins.server.com/job/rhsm-rhel-7.5-x86_64-Tier1Tests/42/) 
  * @param {*} pw 
  */
-function getTriggerType(job: string, pw: string): Rx.Observable<number> {
+function getTriggerType(job: string, pw: string): Rx.Observable<StreamResult<number>> {
     let req = ur.get(`${job}/api/json?pretty=true`)
         .header("Accept", "application/json")
         .auth("ops-qe-jenkins-ci-automation", pw, true)
@@ -162,18 +175,69 @@ function getTriggerType(job: string, pw: string): Rx.Observable<number> {
     // If the length of this filter is greater than 1, then this job was triggered by 
     return req$().map(j => {
         let causes = j.actions.filter(i => i.causes != null)
-        return causes.filter(i => i.shortDescription == "Triggered by CI Message").length
+        return causes.filter(i => i.shortDescription == "Triggered by CI Message").map(res => {
+            return {
+                value: res.length,
+                type: "trigger"
+            }
+        })
+    })
+}
+
+type Path = string
+type CIMessageResult = {
+    brewTaskID: string,
+    version: string
+}
+
+/**
+ * Parses the CI_MESSAGE.json file to get the brew task ID and version we are testing 
+ * 
+ * @param {*} msg 
+ */
+function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>> {
+    let file$ = getFile(msg)
+    file$.map(c => {
+        // TODO: Parse to get needed fields
+        return {
+            type: "ci-message",
+            value: {
+                brewTaskID: "",
+                version: ""
+            }
+        }
     })
 }
 
 function main() {
+    let testngPath = getTestNGXML({distroMajor: 7, variant: "Server", arch: "x8664"})
+    // Assemble our streams
+    let ciMessage$ = parseCIMessage("CI_MESSAGE.json")  // FIXME: Need path to CI_MESSAGE.json
+    let trigger$ = getTriggerType("/path/to/job", "")   // FIXME: Need path to job and password
+    let testResults$ = calculateResults(getFile(testngPath.path))
 
+    Rx.Observable.merge(ciMessage$, trigger$, testResults$)
+        .subscribe({
+            next: res => {
+                switch(res.type) {
+                    case "trigger":
+                        
+                        break
+                }
+            }
+        })
+
+    let metricsData = {
+
+    }
 }
 
 module.exports = {
     getEnv: getEnv,
-    calculateResults: calculateResults
-}
+    calculateResults: calculateResults,
+    getTestNGXML: getTestNGXML,
+    getTriggerType: getTriggerType
+};
 
 function test() {
     let f$ = getFile("testng-polarion.xml")
