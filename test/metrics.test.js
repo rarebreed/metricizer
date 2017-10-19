@@ -5,7 +5,13 @@
 import Rx from "rxjs/Rx"
 import test from "ava"
 import fs from "fs"
-import { getTestNGXML, getTriggerType, getFile, calculateResults, getEnv, parseCIMessage } from "../src/metrics"
+import { getTestNGXML
+       , getTriggerType
+       , getFile
+       , calculateResults
+       , getEnv
+       , parseCIMessage
+       , main } from "../src/metrics"
 import * as R from "ramda"
 
 // ========================================================================
@@ -78,6 +84,30 @@ const installMockXML = (): boolean => {
 
 //const mockXML = installMockXML()
 
+const uninstallMockXML = (): boolean => {
+    let cwd = process.cwd()
+    let xml = `${cwd}/test/resources/testng-polarion.xml`
+    console.log("Uninstalling testng-polarion.xml")
+    fs.unlink(`${mockDirValue}/testng-polarion.xml`)  // FIXME: flow says this is an error, but it isn't
+    return !fs.existsSync(`${mockDirValue}/testng-polarion.xml`)
+}
+
+const installMsgJSON = (): boolean => {
+    let cwd = process.cwd()
+    let json = `${cwd}/test/resources/CI_MESSAGE.json`
+    fs.copyFileSync(json, `${workspace}/CI_MESSAGE.json`)
+    return fs.existsSync(`${workspace}/CI_MESSAGE.json`)
+}
+
+const uninstallMsgJSON = (): boolean => {
+    let cwd = process.cwd()
+    let json = `${cwd}/test/resources/CI_MESSAGE.json`
+    console.log("Uninstalling CI_MESSAGE.json")
+    fs.unlink(`${workspace}/CI_MESSAGE.json`)
+    return !fs.existsSync(`${workspace}/CI_MESSAGE.json`)
+}
+
+
 /**
  * Creates the necessary Jenkins environment variables
  */
@@ -93,20 +123,42 @@ const unsetMockJenkinsEnv = () => {
     keys.forEach(k => process.env[k] = undefined)
 }
 
+test.before("Sets up mock environment", t => {
+    installMockXML()
+    installMsgJSON()
+    setMockJenkinsEnv()
+})
+
+/*
+test.after("Uninstalls mock environment", t => {
+    //uninstallMockXML()
+    //uninstallMsgJSON()
+    unsetMockJenkinsEnv()
+})
+*/
+
 // ========================================================================
 // Begin tests
 // ========================================================================
+
+test(`{
+    "description": "Tests the getEnv() function",
+    "type": "unit"
+}`, t => {
+    let ws = getEnv("WORKSPACE")
+    let ju = getEnv("JOB_URL")
+    let bu = getEnv("BUILD_URL")
+    let jn = getEnv("JOB_NAME")
+    t.true(ws === "/tmp/workspace")
+})
 
 test(`{
     "description": "Tests that getTestNGXML works in mocked jenkins environment",
     "type" : "unit"
 }`, t => {
     t.plan(1)
-    installMockXML()
-    setMockJenkinsEnv()
     let {tier, path } = getTestNGXML({major: 7, variant: "Server", arch: "x86_64"})
     t.is(path, fullFakePath)
-    unsetMockJenkinsEnv()
 })
 
 
@@ -117,11 +169,7 @@ test(`{
     let exampleJob = "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/api/json?pretty=true"
     let trigger$ = getTriggerType(exampleJob, "334c628e5e5df90ae0fabb77db275c54")
     return trigger$.map(i => {
-        if (i.length == 0)
-            t.fail("Expected at least one trigger by CI")
-        let triggers = R.takeWhile((t => t.value == "Triggered by CI message"), i)
-        if (triggers)
-            t.pass("At least one cause from Trigger by CI message")
+        t.true(i.value === "brew")
     })
 })
 
@@ -144,7 +192,6 @@ test(`{
     "description": "Tests the environment variables through getEnv()",
     "type": "unit"
 }`, t => {
-    setMockJenkinsEnv()
     t.is(getEnv("WORKSPACE"), workspace)
     t.is(getEnv("JOB_URL"), "/path/to/jenkins/job/url")
 })
@@ -159,6 +206,16 @@ test(`{
     return msg$.map(r => {
         t.true(r.type === "ci-message", "StreamResult type was not ci-message")
         t.true(r.value.components.length != 0, "Components was empty")
-        console.log(r.value.components)
+        console.log(`parseCIMessage: ${JSON.stringify(r.value.components, null, 2)}`)
     })
+})
+
+test(`{
+    "description": "Tests the main() function that returns the JSON",
+    "type": "integration"
+}`, t => {
+    main({major: 7, variant: "Server", arch: "x86_64"}, 
+    "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/api/json?pretty=true",
+    "334c628e5e5df90ae0fabb77db275c54")
+    t.pass()
 })

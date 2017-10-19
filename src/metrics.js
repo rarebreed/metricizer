@@ -198,19 +198,22 @@ function getTriggerType(job: string, pw: string): Rx.Observable<StreamResult<num
     // If the length of this filter is greater than 1, then this job was triggered by 
     return req$().map(j => {
         let causes = j.body.actions.filter(i => i.causes != null)
-        return causes.map(res => {
-            let trigger = "manual"
-            if (res.shortDescription.includes("CI message"))
-                trigger = "brew"
-            else if (res.shortDescription.includes("Timer"))
-                trigger = "timer"
+        // FIXME: what if causes is empty?
+        let triggers = causes.map(c => c.causes[0])
+            .map(res => {
+                let trigger = "manual"
+                if (res.shortDescription.includes("CI message"))
+                    trigger = "brew"
+                else if (res.shortDescription.includes("Timer"))
+                    trigger = "timer"
 
-            return {
-                value: res.shortDescription,
-                type: trigger
-            }
+                return {
+                    value: trigger,
+                    type: "trigger"
+                }
+            })
+        return R.head(triggers)
         })
-    })
 }
 
 import * as R from "ramda"
@@ -258,7 +261,7 @@ function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>>
                 components: []
             }
         }
-        if (keys) 
+        if (keys)
             result.value.components = cimsg.rpms[keys[0]]
         return result
     })
@@ -267,7 +270,7 @@ function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>>
 
 /**
  * 
- * @param {*} opts 
+ * @param {*} opt
  */
 function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
              , job: string
@@ -279,8 +282,9 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
     }
     // Assemble our streams
     let ciMessage$ = parseCIMessage(`${workspace}/CI_MESSAGE.json`)  // FIXME: Need path to CI_MESSAGE.json
-    let trigger$ = getTriggerType(job, pw)   // FIXME: Need path to job and password
-    let testResults$ = calculateResults(getFile(testngPath.path))
+    ciMessage$.do(r => console.log(`ciMessage$: ${JSON.stringify(r, null, 2)}`))
+    let trigger$ = getTriggerType(job, pw)
+    let testResults$ = calculateResults(getFile(`${testngPath.path}/testng-polarion.xml`))
     let data = {
         trigger: "",
         testResults: [],
@@ -288,8 +292,8 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
         components: []
     }
 
-    Rx.Observable.merge(ciMessage$, trigger$, testResults$)
-        .scan((acc, res) => {
+    Rx.Observable.merge(trigger$, testResults$, ciMessage$)
+        .reduce((acc, res) => {
             switch(res.type) {
                 case "trigger":
                     data.trigger = res.value
@@ -306,18 +310,27 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
             }
             return acc
         }, data)
+        //.do(res => console.log(`Accumulated = ${JSON.stringify(res, null, 2)}`))
         .subscribe({
             next: res => {
+                let tr = res.testResults.total
+                let tests = [ { executor: "beaker"
+                              , arch: opts.arch
+                              , executed: tr.total
+                              , failed: tr.failures + tr.errors
+                              , passed: tr.passed 
+                              } ]
+
                 let data = {
-                    component: res.testResults[0],
+                    component: res.components[0],
                     trigger: res.trigger,
-                    tests: res.testResults,
-                    jenkins_job_url: getEnv("JENKINS_URL") || "",
+                    tests: tests,
+                    jenkins_job_url: getEnv("JOB_URL") || "",
                     jenkins_build_url: getEnv("BUILD_URL") || "",
                     logstash_url: "",
                     CI_tier: testngPath.tier,
                     base_distro: `RHEL ${opts.major}.${opts.minor || ""}`,
-                    brew_task_id: "",  // FIXME:  Need to get this from CI_MESSAGE.json
+                    brew_task_id: res.brewTaskID,
                     compose_id: "",
                     create_time: "", // FIXME: The start time is not in testng-polarion.xml need to get this
                     completion_time: "", // FIXME: Once we have the create_time, we can use res.testResults.
@@ -327,9 +340,9 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                     build_type: res.trigger === "brew" ? "official" : "internal",
                     team: "rhsm-qe",
                     recipients: ["jsefler", "jmolet", "reddaken", "shwetha", "stoner", "jstavel"],
-                    artifact: "" 
+                    artifact: ""
                 }
-                console.log(data)
+                console.log(`data = ${JSON.stringify(data, null, 2)}`)
 
                 // TODO: Send this JSON back as a Promise for the resolver
             }

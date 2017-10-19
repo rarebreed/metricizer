@@ -31,11 +31,18 @@
             "preLaunchTask": "build",
             "program": "${workspaceRoot}/node_modules/ava/profile.js",
             "args": [
-                "${file}"
+                "${workspaceRoot}/lib/test/metrics.test.js"
             ],
             "outFiles": [
                 "${workspaceFolder}/lib/test/**/*.js"
             ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Remote debug to rhsm-jenkins-slave4",
+            "address": "rhsm-jenkins-slave4.usersys.redhat.com",
+            "port": 9229
         }
     ]
 }
