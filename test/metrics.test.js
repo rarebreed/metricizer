@@ -5,7 +5,7 @@
 import Rx from "rxjs/Rx"
 import test from "ava"
 import fs from "fs"
-import { getTestNGXML, getTriggerType, getFile, calculateResults, getEnv } from "../src/metrics"
+import { getTestNGXML, getTriggerType, getFile, calculateResults, getEnv, parseCIMessage } from "../src/metrics"
 import * as R from "ramda"
 
 // ========================================================================
@@ -16,6 +16,8 @@ const workspace = "/tmp/workspace"
 const jobName = "rhsm-rhel-7.5-AllDistros-Tier1Tests"
 const fakeDirs = `${jobName}/PLATFORM/RedHatEnterpriseLinux7-Server-x86_64/label/rhsm/test-output`
 const fullFakePath = `${workspace}/${fakeDirs}`
+// example CI_MESSAGE
+const CI_MESSAGE = ""
 
 const clean = (path: string) => {
     if( fs.existsSync(path) ) {
@@ -102,7 +104,7 @@ test(`{
     t.plan(1)
     installMockXML()
     setMockJenkinsEnv()
-    let {tier, path } = getTestNGXML({distroMajor: 7, variant: "Server", arch: "x86_64"})
+    let {tier, path } = getTestNGXML({major: 7, variant: "Server", arch: "x86_64"})
     t.is(path, fullFakePath)
     unsetMockJenkinsEnv()
 })
@@ -145,4 +147,18 @@ test(`{
     setMockJenkinsEnv()
     t.is(getEnv("WORKSPACE"), workspace)
     t.is(getEnv("JOB_URL"), "/path/to/jenkins/job/url")
+})
+
+test(`{
+    "description": "Tests that the parseCIMessage() function can get the brew task ID and components",
+    "type": "unit"
+}`, t => {
+    let path = `${process.cwd()}/test/resources/CI_MESSAGE.json`
+    console.log(`Path to CI_MESSAGE.json is ${path}`)
+    let msg$ = parseCIMessage(path)
+    return msg$.map(r => {
+        t.true(r.type === "ci-message", "StreamResult type was not ci-message")
+        t.true(r.value.components.length != 0, "Components was empty")
+        console.log(r.value.components)
+    })
 })

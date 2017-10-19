@@ -1,0 +1,53 @@
+{
+    "tag" : {
+        "maven_support" : false,
+        "locked" : false,
+        "name" : "ceph-3.0-rhel-7-pending",
+        "extra" : { },
+        "perm" : null,
+        "id" : 11295,
+        "arches" : "x86_64",
+        "maven_include_all" : false,
+        "perm_id" : null
+    },
+    "force" : null,
+    "build" : {
+        "package_name" : "nfs-ganesha",
+        "extra" : null,
+        "creation_time" : "2017-10-16 20:11:00.112772",
+        "completion_time" : "2017-10-16 20:14:02.629793",
+        "package_id" : 44140,
+        "id" : 608182,
+        "build_id" : 608182,
+        "state" : 1,
+        "source" : null,
+        "epoch" : null,
+        "version" : "2.5.2",
+        "completion_ts" : 1.50818484262979E9,
+        "owner_id" : 3595,
+        "owner_name" : "ceph-build/ceph-jenkins",
+        "nvr" : "nfs-ganesha-2.5.2-5.el7cp",
+        "start_time" : "2017-10-16 20:11:00.112772",
+        "creation_event_id" : 16877442,
+        "start_ts" : 1.50818466011277E9,
+        "volume_id" : 0,
+        "creation_ts" : 1.50818466011277E9,
+        "name" : "nfs-ganesha",
+        "task_id" : 14275230,
+        "volume_name" : "DEFAULT",
+        "release" : "5.el7cp"
+    },
+    "user" : {
+        "status" : 0,
+        "usertype" : 0,
+        "id" : 3545,
+        "name" : "rcm/build",
+        "krb_principal" : "rcm/build@REDHAT.COM"
+    },
+    "rpms" : {
+        "x86_64" : [ "nfs-ganesha-2.5.2-5.el7cp.x86_64.rpm", "nfs-ganesha-ceph-2.5.2-5.el7cp.x86_64.rpm", "nfs-ganesha-debuginfo-2.5.2-5.el7cp.x86_64.rpm", "nfs-ganesha-mount-9P-2.5.2-5.el7cp.x86_64.rpm", "nfs-ganesha-proxy-2.5.2-5.el7cp.x86_64.rpm", "nfs-ganesha-rgw-2.5.2-5.el7cp.x86_64.rpm", "nfs-ganesha-vfs-2.5.2-5.el7cp.x86_64.rpm" ],
+        "src" : [ "nfs-ganesha-2.5.2-5.el7cp.src.rpm" ]
+    },
+    "tags" : [ "ceph-3.0-rhel-7-candidate", "ceph-3.0-rhel-7-pending" ],
+    "archives" : { }
+}

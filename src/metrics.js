@@ -15,7 +15,7 @@ function getEnv(name: string): ?string {
 }
 
 // Correspons to schema.Arch
-type Arch = "aarch64" | "x8664" | "x86_64" | "s390" | "ppc64" | "ppc64le"
+type Arch = "i386" | "aarch64" | "x8664" | "x86_64" | "s390" | "ppc64" | "ppc64le"
 
 // Corresponds to schema.MetricsTest
 type MetricsTest = { executor: "beaker" | "CI-OSP"
@@ -25,7 +25,11 @@ type MetricsTest = { executor: "beaker" | "CI-OSP"
                    , passed: number 
                    }
 
-// Corresponds to schema.Metrics
+/**
+ * Corresponds to schema.Metrics
+ * 
+ * This type represents what is needed by the CI Metrics JSON.
+ */
 type Metrics = { component: string // "subscription-manager-${SUBMAN_VERSION}"  TODO: How do we get the version of subscription-manager we are testing?  
                                    // From CI_MESSAGE I suppose that information is in the brew info?
                , trigger: string   // TODO: Can get this from curl -u ops-qe-jenkins-ci-automation:334c628e5e5df90ae0fabb77db275c54 -k <BUILD_URL> and look for [actions] -> [causes] -> shortDescription 
@@ -58,7 +62,11 @@ type Distro = {
 }
 
 /**
- * Given the major version, variant and arch types, it will look for a job in the $WORKSPACE in order to get the absolute path to the testng-polarion.xml file
+ * Given the major version, variant and arch types, it will look for a job in the $WORKSPACE in order to get the absolute path to the 
+ * testng-polarion.xml file
+ * 
+ * This function is used to find the path to the test-output folder for a given AllDistros type job.  This function is useful 
+ * because it allows other functions to get the path the testng-polarion.xml file that is created by a run of this job
  * 
  * @param {*} opts 
  */
@@ -125,6 +133,8 @@ type StreamResult<T> = {
 /**
  * Given a stream representing a testng-polarion.xml file, convert it to a json equivalent and tally up what's needed
  * 
+ * NOTE: This function is used to calculate the value for "tests" in the JSON for the metrics data
+ * 
  * @param {*} xml$ 
  */
 function calculateResults( xml$: Rx.Observable<string> )
@@ -173,6 +183,8 @@ function calculateResults( xml$: Rx.Observable<string> )
 /**
  * Makes a request to a job url to get the API details
  * 
+ * NOTE: This function will be used to get the value for the "trigger" field in the JSON to be sent
+ * 
  * @param {*} job (eg https://jenkins.server.com/job/rhsm-rhel-7.5-x86_64-Tier1Tests/42/) 
  * @param {*} pw 
  */
@@ -186,15 +198,19 @@ function getTriggerType(job: string, pw: string): Rx.Observable<StreamResult<num
     // If the length of this filter is greater than 1, then this job was triggered by 
     return req$().map(j => {
         let causes = j.body.actions.filter(i => i.causes != null)
-        return causes
-            .filter(i => i.shortDescription != "Triggered by CI message")
-            .map(res => {
-                return {
-                    value: res.shortDescription,
-                    type: "trigger"
-                }
-            })
+        return causes.map(res => {
+            let trigger = "manual"
+            if (res.shortDescription.includes("CI message"))
+                trigger = "brew"
+            else if (res.shortDescription.includes("Timer"))
+                trigger = "timer"
+
+            return {
+                value: res.shortDescription,
+                type: trigger
+            }
         })
+    })
 }
 
 import * as R from "ramda"
@@ -223,40 +239,56 @@ type CIMessageResult = {
 /**
  * Parses the CI_MESSAGE.json file to get the brew task ID and version we are testing 
  * 
+ * NOTE: This function is used to get the data needed by the following fields for the JSON metrics data:
+ * - components
+ * - brew_task_id
+ * 
  * @param {*} msg 
  */
 function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>> {
     let file$ = getFile(msg)
-    file$.map(c => {
-        // TODO: Parse to get needed fields
-        return {
+    return file$.map(c => {
+        let cimsg = JSON.parse(c)
+        let allowed = ["i386", "x86_64", "ppc64", "ppc64le", "aarch64", "s390", "s390x"]
+        let keys = Reflect.ownKeys(cimsg.rpms).filter(k => allowed.includes(k))
+        let result = {
             type: "ci-message",
             value: {
-                brewTaskID: "",
-                version: ""
+                brewTaskID: cimsg.build.task_id,
+                components: []
             }
         }
+        if (keys) 
+            result.value.components = cimsg.rpms[keys[0]]
+        return result
     })
 }
 
 
-function main(opts: Distro = {major: 7, variant: "Server", arch: "x8664"}) {
+/**
+ * 
+ * @param {*} opts 
+ */
+function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
+             , job: string
+             , pw: string ) {
     let testngPath = getTestNGXML(opts) // FIXME
-    // Assemble our streams
-    //let ciMessage$ = parseCIMessage("CI_MESSAGE.json")  // FIXME: Need path to CI_MESSAGE.json
-    let trigger$ = getTriggerType("/path/to/job", "")   // FIXME: Need path to job and password
-    let testResults$ = calculateResults(getFile(testngPath.path))
-    let env = {
-        jenkinsUrl: getEnv("JENKINS_URL"),
-        buildUrl: getEnv("BUILD_URL"),
-        jobName: getEnv("JOB_NAME")
+    let workspace = getEnv("WORKSPACE")
+    if (!workspace) {
+        throw new Error("Could not get WORKSPACE")
     }
+    // Assemble our streams
+    let ciMessage$ = parseCIMessage(`${workspace}/CI_MESSAGE.json`)  // FIXME: Need path to CI_MESSAGE.json
+    let trigger$ = getTriggerType(job, pw)   // FIXME: Need path to job and password
+    let testResults$ = calculateResults(getFile(testngPath.path))
     let data = {
         trigger: "",
-        testResults: []
+        testResults: [],
+        brewTaskID: "",
+        components: []
     }
 
-    Rx.Observable.merge(trigger$, testResults$) // ciMessage$
+    Rx.Observable.merge(ciMessage$, trigger$, testResults$)
         .scan((acc, res) => {
             switch(res.type) {
                 case "trigger":
@@ -264,6 +296,10 @@ function main(opts: Distro = {major: 7, variant: "Server", arch: "x8664"}) {
                     break
                 case "test-results":
                     data.testResults = res.value
+                    break
+                case "ci-message":
+                    data.brewTaskID = res.value.brewTaskID
+                    data.components = res.value.components
                     break
                 default:
                     console.error("Unknown type")
@@ -273,42 +309,31 @@ function main(opts: Distro = {major: 7, variant: "Server", arch: "x8664"}) {
         .subscribe({
             next: res => {
                 let data = {
-                    component: "subscription-manager-1.20.2",
+                    component: res.testResults[0],
                     trigger: res.trigger,
                     tests: res.testResults,
-                    jenkins_job_url: getEnv("JENKINS_URL"),
-                    jenkins_build_url: getEnv("BUILD_URL"),
+                    jenkins_job_url: getEnv("JENKINS_URL") || "",
+                    jenkins_build_url: getEnv("BUILD_URL") || "",
                     logstash_url: "",
                     CI_tier: testngPath.tier,
-                    base_distro: `RHEL ${opts.major}.${opts.minor || ""}`,  // FIXME:  Need to get distro information
+                    base_distro: `RHEL ${opts.major}.${opts.minor || ""}`,
+                    brew_task_id: "",  // FIXME:  Need to get this from CI_MESSAGE.json
+                    compose_id: "",
+                    create_time: "", // FIXME: The start time is not in testng-polarion.xml need to get this
+                    completion_time: "", // FIXME: Once we have the create_time, we can use res.testResults.
+                    CI_infra_failure: "",
+                    CI_infra_failure_desc: "",
+                    job_name: getEnv("JOB_NAME") || "",
+                    build_type: res.trigger === "brew" ? "official" : "internal",
+                    team: "rhsm-qe",
+                    recipients: ["jsefler", "jmolet", "reddaken", "shwetha", "stoner", "jstavel"],
+                    artifact: "" 
                 }
+                console.log(data)
+
+                // TODO: Send this JSON back as a Promise for the resolver
             }
         })
-
-        /*
-    let metricsData: Metrics = {
-        component: "subscription-manager-1.20.2"
-        , trigger: string   // TODO: Can get this from curl -u ops-qe-jenkins-ci-automation:334c628e5e5df90ae0fabb77db275c54 -k <BUILD_URL> and look for [actions] -> [causes] -> shortDescription 
-        , tests: MetricsTest[]
-        , jenkins_job_url: string   // "${JENKINS_URL}"
-        , jenkins_build_url: string // "${BUILD_URL}"
-        , logstash_url: string      // TODO: Ask boaz what this url is
-        , CI_tier: number           // FIXME: Do we have a var that indicates this?  Our job name itself tells what tier the test is for
-        , base_distro: string       // "RHEL 7.2+updates",  TODO: Should be from DISTRO var unless they want a specific format
-        , brew_task_id: number      // TODO: need to parse the CI_MESSAGE text and see if it is in there
-        , compose_id: string        // Is there a way to get this?  Seems to only for use case 3 (eg nightly testing)
-        , create_time: string       // TODO: This should be part of the polarion-testng.xml.  Not sure why they need this.  Need to extract from xml
-        , completion_time: string   // TODO: Same as above
-        , CI_infra_failure: string  // FIXME: Clarify what this is for
-        , CI_infra_failure_desc: string // FIXME:  see above
-        , job_name: string          // "${JOB_NAME}"
-        , build_type: "official" | "internal"
-        , team: string
-        , recipients: string[]      // ["jsefler", "jmolet", "reddaken", "shwetha", "jstavel"]
-        , artifact: string         // TODO: Not sure what artifact to put here.  The polarion results?  the testng.xml?
-
-    }
-    */
 }
 
 module.exports = {
@@ -317,5 +342,6 @@ module.exports = {
     getTestNGXML: getTestNGXML,
     getTriggerType: getTriggerType,
     getFile: getFile,
-    main: main
+    main: main,
+    parseCIMessage: parseCIMessage
 };
