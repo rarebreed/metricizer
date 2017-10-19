@@ -5,7 +5,7 @@
 import Rx from "rxjs/Rx"
 import test from "ava"
 import fs from "fs"
-import { getTestNGXML, getTriggerType, getFile, calculateResults } from "../src/metrics"
+import { getTestNGXML, getTriggerType, getFile, calculateResults, getEnv } from "../src/metrics"
 import * as R from "ramda"
 
 // ========================================================================
@@ -86,6 +86,11 @@ const setMockJenkinsEnv = () => {
     process.env["JOB_NAME"] = jobName
 }
 
+const unsetMockJenkinsEnv = () => {
+    let keys = ["WORKSPACE", "JOB_URL", "BUILD_URL", "JOB_NAME"]
+    keys.forEach(k => process.env[k] = undefined)
+}
+
 // ========================================================================
 // Begin tests
 // ========================================================================
@@ -99,6 +104,7 @@ test(`{
     setMockJenkinsEnv()
     let {tier, path } = getTestNGXML({distroMajor: 7, variant: "Server", arch: "x86_64"})
     t.is(path, fullFakePath)
+    unsetMockJenkinsEnv()
 })
 
 
@@ -130,4 +136,13 @@ test(`{
             console.log(n.value.props)
             t.pass()
         })
+})
+
+test(`{
+    "description": "Tests the environment variables through getEnv()",
+    "type": "unit"
+}`, t => {
+    setMockJenkinsEnv()
+    t.is(getEnv("WORKSPACE"), workspace)
+    t.is(getEnv("JOB_URL"), "/path/to/jenkins/job/url")
 })

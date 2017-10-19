@@ -14,8 +14,10 @@ function getEnv(name: string): ?string {
     return s
 }
 
+// Correspons to schema.Arch
 type Arch = "aarch64" | "x8664" | "x86_64" | "s390" | "ppc64" | "ppc64le"
 
+// Corresponds to schema.MetricsTest
 type MetricsTest = { executor: "beaker" | "CI-OSP"
                    , arch: Arch
                    , executed: number
@@ -23,6 +25,7 @@ type MetricsTest = { executor: "beaker" | "CI-OSP"
                    , passed: number 
                    }
 
+// Corresponds to schema.Metrics
 type Metrics = { component: string // "subscription-manager-${SUBMAN_VERSION}"  TODO: How do we get the version of subscription-manager we are testing?  
                                    // From CI_MESSAGE I suppose that information is in the brew info?
                , trigger: string   // TODO: Can get this from curl -u ops-qe-jenkins-ci-automation:334c628e5e5df90ae0fabb77db275c54 -k <BUILD_URL> and look for [actions] -> [causes] -> shortDescription 
@@ -47,13 +50,20 @@ type Metrics = { component: string // "subscription-manager-${SUBMAN_VERSION}"  
 
 type Variant = "Server" | "Workstation" | "Client" | "ComputeNode"
 
+type Distro = {
+    major: number, 
+    minor?: number,
+    variant: Variant,
+    arch: Arch
+}
+
 /**
  * Given the major version, variant and arch types, it will look for a job in the $WORKSPACE in order to get the absolute path to the testng-polarion.xml file
  * 
  * @param {*} opts 
  */
-function getTestNGXML(opts: {distroMajor: number, variant: Variant, arch: Arch}) {
-    let {distroMajor, variant, arch} = opts
+function getTestNGXML(opts: Distro) {
+    let {major, variant, arch} = opts
     let workspace = getEnv("WORKSPACE")
     let jobName = getEnv("JOB_NAME")
     let fullPath = ""
@@ -65,7 +75,7 @@ function getTestNGXML(opts: {distroMajor: number, variant: Variant, arch: Arch})
     let matched = re.exec(jobName)
     let tier
     if (matched != null) {
-        fullPath = `${workspace}/${jobName}/PLATFORM/RedHatEnterpriseLinux${distroMajor}-${variant}-${arch}/label/rhsm/test-output`
+        fullPath = `${workspace}/${jobName}/PLATFORM/RedHatEnterpriseLinux${major}-${variant}-${arch}/label/rhsm/test-output`
         tier = matched[1]
     }
     else {
@@ -229,27 +239,76 @@ function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>>
     })
 }
 
-function main() {
-    let testngPath = getTestNGXML({distroMajor: 7, variant: "Server", arch: "x8664"})
+
+function main(opts: Distro = {major: 7, variant: "Server", arch: "x8664"}) {
+    let testngPath = getTestNGXML(opts) // FIXME
     // Assemble our streams
-    let ciMessage$ = parseCIMessage("CI_MESSAGE.json")  // FIXME: Need path to CI_MESSAGE.json
+    //let ciMessage$ = parseCIMessage("CI_MESSAGE.json")  // FIXME: Need path to CI_MESSAGE.json
     let trigger$ = getTriggerType("/path/to/job", "")   // FIXME: Need path to job and password
     let testResults$ = calculateResults(getFile(testngPath.path))
+    let env = {
+        jenkinsUrl: getEnv("JENKINS_URL"),
+        buildUrl: getEnv("BUILD_URL"),
+        jobName: getEnv("JOB_NAME")
+    }
+    let data = {
+        trigger: "",
+        testResults: []
+    }
 
-    Rx.Observable.merge(ciMessage$, trigger$, testResults$)
+    Rx.Observable.merge(trigger$, testResults$) // ciMessage$
+        .scan((acc, res) => {
+            switch(res.type) {
+                case "trigger":
+                    data.trigger = res.value
+                    break
+                case "test-results":
+                    data.testResults = res.value
+                    break
+                default:
+                    console.error("Unknown type")
+            }
+            return acc
+        }, data)
         .subscribe({
             next: res => {
-                switch(res.type) {
-                    case "trigger":
-                        
-                        break
+                let data = {
+                    component: "subscription-manager-1.20.2",
+                    trigger: res.trigger,
+                    tests: res.testResults,
+                    jenkins_job_url: getEnv("JENKINS_URL"),
+                    jenkins_build_url: getEnv("BUILD_URL"),
+                    logstash_url: "",
+                    CI_tier: testngPath.tier,
+                    base_distro: `RHEL ${opts.major}.${opts.minor || ""}`,  // FIXME:  Need to get distro information
                 }
             }
         })
 
-    let metricsData = {
+        /*
+    let metricsData: Metrics = {
+        component: "subscription-manager-1.20.2"
+        , trigger: string   // TODO: Can get this from curl -u ops-qe-jenkins-ci-automation:334c628e5e5df90ae0fabb77db275c54 -k <BUILD_URL> and look for [actions] -> [causes] -> shortDescription 
+        , tests: MetricsTest[]
+        , jenkins_job_url: string   // "${JENKINS_URL}"
+        , jenkins_build_url: string // "${BUILD_URL}"
+        , logstash_url: string      // TODO: Ask boaz what this url is
+        , CI_tier: number           // FIXME: Do we have a var that indicates this?  Our job name itself tells what tier the test is for
+        , base_distro: string       // "RHEL 7.2+updates",  TODO: Should be from DISTRO var unless they want a specific format
+        , brew_task_id: number      // TODO: need to parse the CI_MESSAGE text and see if it is in there
+        , compose_id: string        // Is there a way to get this?  Seems to only for use case 3 (eg nightly testing)
+        , create_time: string       // TODO: This should be part of the polarion-testng.xml.  Not sure why they need this.  Need to extract from xml
+        , completion_time: string   // TODO: Same as above
+        , CI_infra_failure: string  // FIXME: Clarify what this is for
+        , CI_infra_failure_desc: string // FIXME:  see above
+        , job_name: string          // "${JOB_NAME}"
+        , build_type: "official" | "internal"
+        , team: string
+        , recipients: string[]      // ["jsefler", "jmolet", "reddaken", "shwetha", "jstavel"]
+        , artifact: string         // TODO: Not sure what artifact to put here.  The polarion results?  the testng.xml?
 
     }
+    */
 }
 
 module.exports = {
@@ -257,5 +316,6 @@ module.exports = {
     calculateResults: calculateResults,
     getTestNGXML: getTestNGXML,
     getTriggerType: getTriggerType,
-    getFile: getFile
+    getFile: getFile,
+    main: main
 };
