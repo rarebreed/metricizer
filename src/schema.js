@@ -17,7 +17,7 @@ let schema = buildSchema(`
 
     enum Executor {
         beaker
-        ci-osp
+        ciosp
     }
 
     type MetricsTest {
@@ -33,7 +33,7 @@ let schema = buildSchema(`
         internal
     }
 
-    type Metrics = { 
+    type Metrics { 
         component: String!,
         trigger: String!,
         tests: [MetricsTest]!,
@@ -54,8 +54,8 @@ let schema = buildSchema(`
         recipients: [String]!,
         artifact: String
     }
-    
-    type {
 
+    type Query {
+        main: Metrics!
     }
 `)

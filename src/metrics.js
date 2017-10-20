@@ -8,6 +8,9 @@ const Rx = require("rxjs/Rx")
 const fs = require("fs")
 const x2j = require("xml2js")
 const ur = require("unirest")
+import type { URLOpts } from "metricizer"
+
+const jenkins = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view`
 
 function getEnv(name: string): ?string {
     let s: ?string =  process.env[name]
@@ -61,6 +64,29 @@ type Distro = {
     arch: Arch
 }
 
+const getJenkinsAPI = (url: string, pw: string) => {
+    let req = ur.get(url)
+        .header("Accept", "application/json")
+        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .strictSSL(false)
+    let req$ = Rx.Observable.bindCallback(req.end)
+    return req$
+}
+
+const makeURL = (opts: URLOpts, api: string) => {
+    let { job, build, pw, tab } = opts
+    return `${jenkins}/${tab}/job/${job}/${build}${api}`
+}
+
+const getArtifact = (opts: URLOpts, artifact: string) => {
+    let url = makeURL(opts ,`/artifact/test-output/${artifact}`)
+    console.log(`Getting artifact from ${url}`)
+    let req$ = getJenkinsAPI(url, opts.pw)
+    return req$().map(resp => {
+        return resp.body
+    })
+}
+
 /**
  * Given the major version, variant and arch types, it will look for a job in the $WORKSPACE in order to get the absolute path to the 
  * testng-polarion.xml file
@@ -102,9 +128,10 @@ function getTestNGXML(opts: Distro) {
  * 
  * @param {*} path 
  */
-function getFile(path: string): Rx.Observable<string> {
+function getFile(path: string) {
     let readFile$ = Rx.Observable.bindNodeCallback(fs.readFile)
-    return readFile$(path, "utf8").map(b => b.toString())
+    let bf$ =  readFile$(path, "utf8").map(b => b.toString())
+    return bf$
 }
 
 type Calculated = {
@@ -126,16 +153,11 @@ type TestValue = {
 }
 
 type StreamResult<T> = {
-    type: "ci-message" | "trigger" | "test-results" | "ci-time",
+    type: "ci-message" | "trigger" | "test-results" | "ci-time" | "env-vars",
     value: T
 }
 
-type URLOpts = {
-    job: string,
-    build: number,
-    pw: string, 
-    tab: string
-}
+
 
 /**
  * Given a stream representing a testng-polarion.xml file, convert it to a json equivalent and tally up what's needed
@@ -258,11 +280,10 @@ type CIMessageResult = {
  * 
  * @param {*} msg 
  */
-function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>> {
-    let file$ = getFile(msg)
+function parseCIMessage(file$: Rx.Observable<string>): Rx.Observable<StreamResult<CIMessageResult>> {
     return file$.map(c => {
         let cimsg = JSON.parse(c)
-        let allowed = ["i386", "x86_64", "ppc64", "ppc64le", "aarch64", "s390", "s390x"]
+        let allowed = ["i386", "x86_64", "ppc64", "ppc64le", "aarch64", "s390x"]
         let keys = Reflect.ownKeys(cimsg.rpms).filter(k => allowed.includes(k))
         let result = {
             type: "ci-message",
@@ -298,34 +319,152 @@ function getJobStartTime(opts: URLOpts) {
 }
 
 /**
+ * Gets the injected Vars
+ * @param {*} opts 
+ */
+function getInjectedVars(opts: URLOpts): Rx.Observable<{}> {
+    let { tab, job, build, pw} = opts
+    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/injectedEnvVars/export`
+    let req = ur.get(url)
+        .header("Accept", "application/json")
+        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .strictSSL(false)
+    let req$ = Rx.Observable.bindCallback(req.end)
+    return req$().map(resp => {
+            return resp.body.envVars.envVar
+        })
+        .map(vars => {
+            // There shouldn't be any duplicate names, so let's reduce this to an object
+            return vars.reduce((acc, n) => {
+                let {name, value} = n
+                acc[name] = value
+                return acc
+            }, {})
+        })
+        //.do(r => console.log(JSON.stringify(r, null, 2)))
+}
+
+const getPlatformFromLabel = (label: string) => {
+    console.log(`Getting Distro for ${label}`)
+    let re = /RedHatEnterpriseLinux(\d)-(\w+)-(\w+),/
+    let matched = re.exec(label)
+    if (matched != null) {
+        let ret: Distro = {
+            major: Number(matched[1]),
+            variant: matched[2],
+            arch: matched[3]
+        }
+        return ret
+    }
+    else 
+        throw new Error("Could not determine Distro from label")
+}
+
+type PlatformLabel = Map<Variant, Map<Arch, string>>
+
+function getMatrixJobLabels(opts: URLOpts): Rx.Observable<PlatformLabel> {
+    let { tab, job, build, pw } = opts
+    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/api/json?tree=runs[number,url]`
+    let req$ = getJenkinsAPI(url, pw)
+    let d: PlatformLabel = new Map()
+    return req$().mergeMap(resp => {
+            let runs: {number: number, url: string}[] = resp.body.runs
+            return Rx.Observable.of(...runs)
+        })
+        .filter(run => run.number === build)
+        //.do(r => console.log(`In getMatrixJobLabels: ${JSON.stringify(r, null, 2)}`))
+        .pluck("url")
+        .reduce((acc: PlatformLabel, n: string) => {
+            let distro = getPlatformFromLabel(n)
+            // ughh more mutation (and if/elses).  But immutable.js still doesn't play nice with flow
+            if (distro) {
+                if (acc.has(distro.variant)) {
+                    let variant = acc.get(distro.variant)
+                    if (variant)
+                        variant.set(distro.arch, n)
+                }
+                else {
+                    acc.set(distro.variant, new Map())
+                    let variant = acc.get(distro.variant)
+                    if (variant)
+                        variant.set(distro.arch, n)
+                }
+            }
+            return acc
+        }, d)
+}
+
+const getTierFromJob = (job) => {
+    let matched = /Tier.*(\d)/.exec(job)
+    if (matched != null)
+        return Number(matched[1])
+    else
+        return 0
+}
+
+const getJobFromLabel = (label: string) => {
+    let parts = label.substr(8).split("/").slice(4,6)
+    if (parts.length !== 2)
+        throw new Error("Could not get the 2 sections for the job")
+    return parts
+}
+
+/**
+ * This is the main function which actually calculates the JSON to be sent to the CI Metrics data
  * 
  * @param {*} opt
  */
-function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
-             , urlOpts: URLOpts
-             ) {
-    let testngPath = getTestNGXML(opts) // FIXME
-    let workspace = getEnv("WORKSPACE")
-    if (!workspace) {
-        throw new Error("Could not get WORKSPACE")
-    }
-    // Assemble our streams
-    let ciMessage$ = parseCIMessage(`${workspace}/CI_MESSAGE.json`)  // FIXME: Need path to CI_MESSAGE.json
-    ciMessage$.do(r => console.log(`ciMessage$: ${JSON.stringify(r, null, 2)}`))
+function main( opts: Distro, urlOpts: URLOpts) {
+    // Assemble our streams  
     let trigger$ = getTriggerType(urlOpts)
-    let testResults$ = calculateResults(getFile(`${testngPath.path}/testng-polarion.xml`))
     let jobTime$ = getJobStartTime(urlOpts)
+    let envVars$ = getInjectedVars(urlOpts).map(v => {
+        let ret: StreamResult<{}> =  {
+            type: "env-vars",
+            value: v
+        }
+        return ret
+    })
+
+    let labels$ = getMatrixJobLabels(urlOpts)
+    const artifactStream = (artifact: string, fn: (Rx.Observable<any>) => Rx.Observable<any>) => {
+        return labels$.concatMap(lbls => {
+            let artOpts = Object.assign({}, urlOpts)  // copy the object
+            artOpts.job = getJobFromLabel(lbls.get(opts.variant).get(opts.arch)).join("/")
+            let art$ = getArtifact(artOpts, "testng-polarion.xml")
+            return fn(art$)
+        })
+    }
+
+    // Get the matrix job labels so we can calculate which artifacts (testng-polarion.xml and CI_MESSAGE.json) to download
+    let testResults$ = labels$.concatMap(lbls => {
+        let artOpts = Object.assign({}, urlOpts)  // copy the object
+        artOpts.job = getJobFromLabel(lbls.get(opts.variant).get(opts.arch)).join("/")
+        let testng$ = getArtifact(artOpts, "testng-polarion.xml")
+        return calculateResults(testng$)
+    })
+    let ciMessage$ = labels$.concatMap(lbls => {
+        let msgOpts = Object.assign({}, urlOpts)  // copy the object
+        msgOpts.job = getJobFromLabel(lbls.get(opts.variant).get(opts.arch)).join("/")
+        let cimsg$ = getArtifact(msgOpts, "CI_MESSAGE.jon")
+        return parseCIMessage(cimsg$) 
+    })
+
+    // This object will accumulate the data from the streams.  Note that we will mutate this value
+    // An alternative would be to use an immutable.Map, or to use Object.assign() to create a new obj
     let data = {
         trigger: "",
         testResults: [],
         brewTaskID: "",
         components: [],
         createTime: "",
-        epoch: 0
+        epoch: 0,
+        envVars: {}
     }
 
-    Rx.Observable.merge(trigger$, testResults$, ciMessage$, jobTime$)
+    Rx.Observable.merge(trigger$, testResults$, ciMessage$, jobTime$, envVars$)
         .reduce((acc, res) => {
+            // FIXME: This switch feels ugly. But I need to know the res.type and act accordingly
             switch(res.type) {
                 case "trigger":
                     data.trigger = res.value
@@ -341,12 +480,15 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                     data.createTime = res.value.time
                     data.epoch = res.value.epoch
                     break
+                case "env-vars":
+                    data.envVars = res.value
+                    break
                 default:
                     console.error("Unknown type")
             }
             return acc
         }, data)
-        //.do(res => console.log(`Accumulated = ${JSON.stringify(res, null, 2)}`))
+        .do(r => console.log(JSON.stringify(r, null, 2)))
         .subscribe({
             next: res => {
                 let tr = res.testResults.total
@@ -362,10 +504,10 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                     component: res.components[0],
                     trigger: res.trigger,
                     tests: tests,
-                    jenkins_job_url: getEnv("JOB_URL") || "",
-                    jenkins_build_url: getEnv("BUILD_URL") || "",
+                    jenkins_job_url: res.envVars.JOB_URL || "",
+                    jenkins_build_url: res.envVars.BUILD_URL || "",
                     logstash_url: "",
-                    CI_tier: testngPath.tier,
+                    CI_tier: getTierFromJob(urlOpts.job),
                     base_distro: `RHEL ${opts.major}.${opts.minor || ""}`,
                     brew_task_id: res.brewTaskID,
                     compose_id: "",
@@ -373,7 +515,7 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                     completion_time: testrunTime.toISOString(), 
                     CI_infra_failure: "",
                     CI_infra_failure_desc: "",
-                    job_name: getEnv("JOB_NAME") || "",
+                    job_name: res.envVars.JOB_NAME || "",
                     build_type: res.trigger === "brew" ? "official" : "internal",
                     team: "rhsm-qe",
                     recipients: ["jsefler", "jmolet", "reddaken", "shwetha", "stoner", "jstavel"],
@@ -382,8 +524,9 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                 console.log(`data = ${JSON.stringify(data, null, 2)}`)
 
                 // TODO: Send this JSON back as a Promise for the resolver
-                let workspace = getEnv("WORKSPACE") || "/tmp"
-                fs.writeFileSync(`${workspace}/${urlOpts.job}/CI_METRICS.json`, JSON.stringify(data))
+                //let workspace = res.envVars.WORKSPACE || "/tmp"
+                //fs.writeFileSync(`/tmp/${urlOpts.job}/CI_METRICS.json`, JSON.stringify(data))
+                fs.writeFileSync(`/tmp/CI_METRICS.json`, JSON.stringify(data))
             }
         })
 }
@@ -396,5 +539,10 @@ module.exports = {
     getFile: getFile,
     main: main,
     getJobStartTime: getJobStartTime,
-    parseCIMessage: parseCIMessage
+    parseCIMessage: parseCIMessage,
+    getInjectedVars: getInjectedVars,
+    getMatrixJobLabels: getMatrixJobLabels, 
+    getArtifact: getArtifact,
+    getJenkinsAPI: getJenkinsAPI,
+    makeURL: makeURL
 };

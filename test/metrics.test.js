@@ -12,12 +12,17 @@ import { getTestNGXML
        , getEnv
        , parseCIMessage
        , getJobStartTime
+       , getInjectedVars
+       , getMatrixJobLabels
+       , getArtifact
+       , makeURL
        , main } from "../src/metrics"
 import * as R from "ramda"
 
 // ========================================================================
 // Setup mocks/spies
 // ========================================================================
+const opts = { tab: 'QE-RHEL7.5', job: 'rhsm-rhel-7.5-AllDistros-Tier1Tests', build: 13, pw: '334c628e5e5df90ae0fabb77db275c54' }
 
 const workspace = "/tmp/workspace"
 const jobName = "rhsm-rhel-7.5-AllDistros-Tier1Tests"
@@ -184,8 +189,6 @@ test(`{
     let f$ = getFile(`${cwd}/test/resources/testng-polarion.xml`)
     return calculateResults(f$)
         .map(n => {
-            console.log(n.value.total)
-            console.log(n.value.props)
             t.pass()
         })
 })
@@ -231,4 +234,60 @@ test(`{
     let opts = {tab: "QE-RHEL7.5", job: "rhsm-rhel-7.5-AllDistros-Tier1Tests", build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
     main({major: 7, variant: "Server", arch: "x86_64"}, opts)
     t.pass()
+})
+
+test(`{
+    "description": "Tests getInjectedVars() works",
+    "type": "integration"
+}`, t => {
+    let opts = { tab: 'QE-RHEL7.5', job: 'rhsm-rhel-7.5-AllDistros-Tier1Tests', build: 13, pw: '334c628e5e5df90ae0fabb77db275c54' }
+    let v = getInjectedVars(opts)
+    return v.map(r => {
+        t.true(r.BUILD_URL == "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/")
+    })
+})
+
+test(`{
+    "description": "Tests getMatrixJobLabels()",
+    "type": "integration"
+}`, t => {
+    let mj = getMatrixJobLabels(opts)
+    return mj.map(runs => {
+        console.log(`Runs from matrix job: ${runs}`)
+        t.pass()
+        //t.true(runs.includes("https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/PLATFORM=RedHatEnterpriseLinux7-Server-s390x,label=rhsm/13/"))
+    })
+})
+
+test(`{ 
+    "description": "Tests the makeURL() function",
+    "type": "unit"
+}`, t => {
+    let opts = {
+        job: "rhsm-rhel-7.5-x86_64-Tier1Tests",
+        tab: "QE-RHEL7.5",
+        build: 43,
+        pw: "334c628e5e5df90ae0fabb77db275c54"
+    }
+    let artifact = "testng-polarion.xml"
+    let url = makeURL(opts ,`/artifact/test-output/${artifact}`)
+    console.log(`makeURL: ${url}`)
+    t.is(url, "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-x86_64-Tier1Tests/43/artifact/test-output/testng-polarion.xml")
+})
+
+test(`{
+    "description": "Tests getting an artifact",
+    "type": "integration",
+    "enabled": false
+}`, t => {
+    let opts = {
+        job: "rhsm-rhel-7.5-x86_64-Tier1Tests",
+        tab: "QE-RHEL7.5",
+        build: 43,
+        pw: "334c628e5e5df90ae0fabb77db275c54"
+    }
+    let art$ = getArtifact(opts, "testng-polarion.xml")
+    return art$.map(f => {
+        t.truthy(f)
+    })
 })
