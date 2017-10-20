@@ -148,17 +148,6 @@ test.after("Uninstalls mock environment", t => {
 // ========================================================================
 
 test(`{
-    "description": "Tests the getEnv() function",
-    "type": "unit"
-}`, t => {
-    let ws = getEnv("WORKSPACE")
-    let ju = getEnv("JOB_URL")
-    let bu = getEnv("BUILD_URL")
-    let jn = getEnv("JOB_NAME")
-    t.true(ws === "/tmp/workspace")
-})
-
-test(`{
     "description": "Tests that getTestNGXML works in mocked jenkins environment",
     "type" : "unit"
 }`, t => {
@@ -207,7 +196,7 @@ test(`{
 }`, t => {
     let path = `${process.cwd()}/test/resources/CI_MESSAGE.json`
     console.log(`Path to CI_MESSAGE.json is ${path}`)
-    let msg$ = parseCIMessage(path)
+    let msg$ = parseCIMessage(getFile(path))
     return msg$.map(r => {
         t.true(r.type === "ci-message", "StreamResult type was not ci-message")
         t.true(r.value.components.length != 0, "Components was empty")
@@ -231,8 +220,13 @@ test(`{
     "description": "Tests the main() function that returns the JSON",
     "type": "integration"
 }`, t => {
-    let opts = {tab: "QE-RHEL7.5", job: "rhsm-rhel-7.5-AllDistros-Tier1Tests", build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
-    main({major: 7, variant: "Server", arch: "x86_64"}, opts)
+    let opts = {tab: "QE-RHEL7.4", job: "rhsm-rhel-7.4-AllDistros-Tier1Tests", build: 61, pw: "334c628e5e5df90ae0fabb77db275c54"}
+    let result = main({major: 7, variant: "Server", arch: "x86_64"}, opts)
+    result.response.subscribe({
+        next: n => console.log(JSON.parse(n)),
+        error: err => console.error(err),
+        complete: () => console.log("Calculation now ready")
+    })
     t.pass()
 })
 

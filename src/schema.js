@@ -56,6 +56,6 @@ let schema = buildSchema(`
     }
 
     type Query {
-        main: Metrics!
+        cidata: Metrics!
     }
 `)

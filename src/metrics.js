@@ -8,60 +8,23 @@ const Rx = require("rxjs/Rx")
 const fs = require("fs")
 const x2j = require("xml2js")
 const ur = require("unirest")
-import type { URLOpts } from "metricizer"
+import type { URLOpts
+            , StreamResult
+            , TestValue
+            , MetricsTest
+            , Distro
+            , Variant
+            , Arch
+            , StreamData
+            , CIMessageResult
+            , PlatformLabel
+            } from "metricizer"
 
 const jenkins = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view`
 
 function getEnv(name: string): ?string {
     let s: ?string =  process.env[name]
     return s
-}
-
-// Correspons to schema.Arch
-type Arch = "i386" | "aarch64" | "x8664" | "x86_64" | "s390" | "ppc64" | "ppc64le"
-
-// Corresponds to schema.MetricsTest
-type MetricsTest = { executor: "beaker" | "CI-OSP"
-                   , arch: Arch
-                   , executed: number
-                   , failed: number
-                   , passed: number 
-                   }
-
-/**
- * Corresponds to schema.Metrics
- * 
- * This type represents what is needed by the CI Metrics JSON.
- */
-type Metrics = { component: string // "subscription-manager-${SUBMAN_VERSION}"  TODO: How do we get the version of subscription-manager we are testing?  
-                                   // From CI_MESSAGE I suppose that information is in the brew info?
-               , trigger: string   // TODO: Can get this from curl -u ops-qe-jenkins-ci-automation:334c628e5e5df90ae0fabb77db275c54 -k <BUILD_URL> and look for [actions] -> [causes] -> shortDescription 
-               , tests: MetricsTest[]
-               , jenkins_job_url: string   // "${JENKINS_URL}"
-               , jenkins_build_url: string // "${BUILD_URL}"
-               , logstash_url: string      // TODO: Ask boaz what this url is
-               , CI_tier: number           // FIXME: Do we have a var that indicates this?  Our job name itself tells what tier the test is for
-               , base_distro: string       // "RHEL 7.2+updates",  TODO: Should be from DISTRO var unless they want a specific format
-               , brew_task_id: number      // TODO: need to parse the CI_MESSAGE text and see if it is in there
-               , compose_id: string        // Is there a way to get this?  Seems to only for use case 3 (eg nightly testing)
-               , create_time: string       // TODO: This should be part of the polarion-testng.xml.  Not sure why they need this.  Need to extract from xml
-               , completion_time: string   // TODO: Same as above
-               , CI_infra_failure: string  // FIXME: Clarify what this is for
-               , CI_infra_failure_desc: string // FIXME:  see above
-               , job_name: string          // "${JOB_NAME}"
-               , build_type: "official" | "internal"
-               , team: string
-               , recipients: string[]      // ["jsefler", "jmolet", "reddaken", "shwetha", "jstavel"]
-               , artifact: string         // TODO: Not sure what artifact to put here.  The polarion results?  the testng.xml?
-               }
-
-type Variant = "Server" | "Workstation" | "Client" | "ComputeNode"
-
-type Distro = {
-    major: number, 
-    minor?: number,
-    variant: Variant,
-    arch: Arch
 }
 
 const getJenkinsAPI = (url: string, pw: string) => {
@@ -133,31 +96,6 @@ function getFile(path: string) {
     let bf$ =  readFile$(path, "utf8").map(b => b.toString())
     return bf$
 }
-
-type Calculated = {
-    total: number, 
-    failures: number, 
-    errors: number, 
-    passed: number, 
-    time: number
-}
-
-type Property = {
-    name: string,
-    value: string
-}
-
-type TestValue = {
-    total: Calculated,
-    props: any
-}
-
-type StreamResult<T> = {
-    type: "ci-message" | "trigger" | "test-results" | "ci-time" | "env-vars",
-    value: T
-}
-
-
 
 /**
  * Given a stream representing a testng-polarion.xml file, convert it to a json equivalent and tally up what's needed
@@ -265,12 +203,6 @@ function testTriggerType() {
 }
 
 
-type Path = string
-type CIMessageResult = {
-    brewTaskID: string,
-    version: string
-}
-
 /**
  * Parses the CI_MESSAGE.json file to get the brew task ID and version we are testing 
  * 
@@ -282,20 +214,26 @@ type CIMessageResult = {
  */
 function parseCIMessage(file$: Rx.Observable<string>): Rx.Observable<StreamResult<CIMessageResult>> {
     return file$.map(c => {
-        let cimsg = JSON.parse(c)
-        let allowed = ["i386", "x86_64", "ppc64", "ppc64le", "aarch64", "s390x"]
-        let keys = Reflect.ownKeys(cimsg.rpms).filter(k => allowed.includes(k))
-        let result = {
-            type: "ci-message",
-            value: {
-                brewTaskID: cimsg.build.task_id,
-                components: []
+            let cimsg = JSON.parse(c)
+            let allowed = ["i386", "x86_64", "ppc64", "ppc64le", "aarch64", "s390x"]
+            let keys = Reflect.ownKeys(cimsg.rpms).filter(k => allowed.includes(k))
+            let result = {
+                type: "ci-message",
+                value: {
+                    brewTaskID: cimsg.build.task_id,
+                    components: []
+                }
             }
-        }
-        if (keys)
-            result.value.components = cimsg.rpms[keys[0]]
-        return result
-    })
+            if (keys)
+                result.value.components = cimsg.rpms[keys[0]]
+            return result
+        })
+        .catch(err => {  // If we blow up parsing, use a default
+            console.warn("Using a DEFAULT CI_MESSAGE.json!")
+            let cwd = `${process.cwd()}/test/resources/CI_MESSAGE.json`
+            let default$ = getFile(cwd)
+            return parseCIMessage(default$)
+        })
 }
 
 function getJobStartTime(opts: URLOpts) {
@@ -319,7 +257,8 @@ function getJobStartTime(opts: URLOpts) {
 }
 
 /**
- * Gets the injected Vars
+ * Gets the injected Vars for a particular job (eg BUILD_URL, WORKSPACE)
+ * 
  * @param {*} opts 
  */
 function getInjectedVars(opts: URLOpts): Rx.Observable<{}> {
@@ -341,11 +280,10 @@ function getInjectedVars(opts: URLOpts): Rx.Observable<{}> {
                 return acc
             }, {})
         })
-        //.do(r => console.log(JSON.stringify(r, null, 2)))
+        .do(r => console.debug(JSON.stringify(r, null, 2)))
 }
 
 const getPlatformFromLabel = (label: string) => {
-    console.log(`Getting Distro for ${label}`)
     let re = /RedHatEnterpriseLinux(\d)-(\w+)-(\w+),/
     let matched = re.exec(label)
     if (matched != null) {
@@ -360,8 +298,11 @@ const getPlatformFromLabel = (label: string) => {
         throw new Error("Could not determine Distro from label")
 }
 
-type PlatformLabel = Map<Variant, Map<Arch, string>>
-
+/**
+ * Retrieves all the labels for a matrix job and returns as a Map of variant to Map of arch to URI path
+ * 
+ * @param {*} opts 
+ */
 function getMatrixJobLabels(opts: URLOpts): Rx.Observable<PlatformLabel> {
     let { tab, job, build, pw } = opts
     let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/api/json?tree=runs[number,url]`
@@ -409,46 +350,57 @@ const getJobFromLabel = (label: string) => {
     return parts
 }
 
+const dataCheck = (res: {type: string, value: any}, data: StreamData) => {
+    // FIXME: This switch feels ugly. But I need to know the res.type in order to merge data together
+    switch(res.type) {
+        case "trigger":
+            data.trigger = res.value
+            break
+        case "test-results":
+            data.testResults = res.value
+            break
+        case "ci-message":
+            data.brewTaskID = res.value.brewTaskID
+            data.components = res.value.components
+            break
+        case "ci-time":
+            data.createTime = res.value.time
+            data.epoch = res.value.epoch
+            break
+        case "env-vars":
+            data.envVars = res.value
+            break
+        default:
+            console.error("Unknown type")
+    }
+    return data
+}
+
 /**
  * This is the main function which actually calculates the JSON to be sent to the CI Metrics data
  * 
  * @param {*} opt
  */
-function main( opts: Distro, urlOpts: URLOpts) {
-    // Assemble our streams  
-    let trigger$ = getTriggerType(urlOpts)
-    let jobTime$ = getJobStartTime(urlOpts)
-    let envVars$ = getInjectedVars(urlOpts).map(v => {
-        let ret: StreamResult<{}> =  {
-            type: "env-vars",
-            value: v
-        }
-        return ret
-    })
-
-    let labels$ = getMatrixJobLabels(urlOpts)
-    const artifactStream = (artifact: string, fn: (Rx.Observable<any>) => Rx.Observable<any>) => {
+function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
+    // Helper function to get artifacts based on the opts Distro by looking up the matrix job label
+    const artifactStream = (lbl$: Rx.Observable<PlatformLabel>, artifact: string, fn: (Rx.Observable<any>) => Rx.Observable<any>) => {
+        console.log(`Getting artifact for ${artifact}`)
         return labels$.concatMap(lbls => {
             let artOpts = Object.assign({}, urlOpts)  // copy the object
             artOpts.job = getJobFromLabel(lbls.get(opts.variant).get(opts.arch)).join("/")
-            let art$ = getArtifact(artOpts, "testng-polarion.xml")
+            let art$ = getArtifact(artOpts, artifact)
             return fn(art$)
         })
     }
+    // Assemble our streams  
+    let trigger$ = getTriggerType(urlOpts)
+    let jobTime$ = getJobStartTime(urlOpts)
+    let envVars$ = getInjectedVars(urlOpts).map(v => Object.assign({type: "env-vars", value: v}))
 
     // Get the matrix job labels so we can calculate which artifacts (testng-polarion.xml and CI_MESSAGE.json) to download
-    let testResults$ = labels$.concatMap(lbls => {
-        let artOpts = Object.assign({}, urlOpts)  // copy the object
-        artOpts.job = getJobFromLabel(lbls.get(opts.variant).get(opts.arch)).join("/")
-        let testng$ = getArtifact(artOpts, "testng-polarion.xml")
-        return calculateResults(testng$)
-    })
-    let ciMessage$ = labels$.concatMap(lbls => {
-        let msgOpts = Object.assign({}, urlOpts)  // copy the object
-        msgOpts.job = getJobFromLabel(lbls.get(opts.variant).get(opts.arch)).join("/")
-        let cimsg$ = getArtifact(msgOpts, "CI_MESSAGE.jon")
-        return parseCIMessage(cimsg$) 
-    })
+    let labels$ = getMatrixJobLabels(urlOpts)
+    let testResults$ = artifactStream(labels$, "testng-polarion.xml", calculateResults)
+    let ciMessage$ = artifactStream(labels$, "CI_MESSAGE.json", parseCIMessage)
 
     // This object will accumulate the data from the streams.  Note that we will mutate this value
     // An alternative would be to use an immutable.Map, or to use Object.assign() to create a new obj
@@ -462,33 +414,16 @@ function main( opts: Distro, urlOpts: URLOpts) {
         envVars: {}
     }
 
-    Rx.Observable.merge(trigger$, testResults$, ciMessage$, jobTime$, envVars$)
-        .reduce((acc, res) => {
-            // FIXME: This switch feels ugly. But I need to know the res.type and act accordingly
-            switch(res.type) {
-                case "trigger":
-                    data.trigger = res.value
-                    break
-                case "test-results":
-                    data.testResults = res.value
-                    break
-                case "ci-message":
-                    data.brewTaskID = res.value.brewTaskID
-                    data.components = res.value.components
-                    break
-                case "ci-time":
-                    data.createTime = res.value.time
-                    data.epoch = res.value.epoch
-                    break
-                case "env-vars":
-                    data.envVars = res.value
-                    break
-                default:
-                    console.error("Unknown type")
-            }
-            return acc
-        }, data)
-        .do(r => console.log(JSON.stringify(r, null, 2)))
+    // This is our return object. We use it to pass the calculated JSON data back out.  GraphQL doesn't
+    // support Observables, so we "push" the data to the subject, and then we can convert to a Promise
+    let response$ = new Rx.AsyncSubject("{}")
+
+    // This is where all the action happens.  We merge all our streams together.  Most of the logic here
+    // is in the reduce.  When the streams are merged, we accumulate the events in the stream into the data
+    // object.  Since we use reduce instead of scan, this means each of the merged streams must complete
+    // (ie, they must emit the complete event)
+    let sub = Rx.Observable.merge(trigger$, testResults$, ciMessage$, jobTime$, envVars$)
+        .reduce((acc, res) => dataCheck(res, acc), data)
         .subscribe({
             next: res => {
                 let tr = res.testResults.total
@@ -521,15 +456,23 @@ function main( opts: Distro, urlOpts: URLOpts) {
                     recipients: ["jsefler", "jmolet", "reddaken", "shwetha", "stoner", "jstavel"],
                     artifact: ""
                 }
-                console.log(`data = ${JSON.stringify(data, null, 2)}`)
 
-                // TODO: Send this JSON back as a Promise for the resolver
-                //let workspace = res.envVars.WORKSPACE || "/tmp"
-                //fs.writeFileSync(`/tmp/${urlOpts.job}/CI_METRICS.json`, JSON.stringify(data))
-                fs.writeFileSync(`/tmp/CI_METRICS.json`, JSON.stringify(data))
-            }
+                let json = JSON.stringify(data)
+                response$.next(json)
+                response$.complete()
+                // TODO: Hook this into pouchdb and save this off
+                //fs.writeFileSync(`/tmp/CI_METRICS.json`, json)
+            },
+            error: err => console.error(err),
+            complete: () => console.debug("main() sent a completion event")
         })
+
+    return {
+        subscription: sub,
+        response: response$
+    }
 }
+
 
 module.exports = {
     getEnv: getEnv,
