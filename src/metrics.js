@@ -126,8 +126,15 @@ type TestValue = {
 }
 
 type StreamResult<T> = {
-    type: "ci-message" | "trigger" | "test-results",
+    type: "ci-message" | "trigger" | "test-results" | "ci-time",
     value: T
+}
+
+type URLOpts = {
+    job: string,
+    build: number,
+    pw: string, 
+    tab: string
 }
 
 /**
@@ -188,8 +195,10 @@ function calculateResults( xml$: Rx.Observable<string> )
  * @param {*} job (eg https://jenkins.server.com/job/rhsm-rhel-7.5-x86_64-Tier1Tests/42/) 
  * @param {*} pw 
  */
-function getTriggerType(job: string, pw: string): Rx.Observable<StreamResult<number>> {
-    let req = ur.get(`${job}/api/json?pretty=true`)
+function getTriggerType(opts: URLOpts): Rx.Observable<StreamResult<number>> {
+    let { tab, job, build, pw } = opts
+    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}`
+    let req = ur.get(`${url}/api/json?pretty=true`)
         .header("Accept", "application/json")
         .auth("ops-qe-jenkins-ci-automation", pw, true)
         .strictSSL(false)
@@ -219,8 +228,9 @@ function getTriggerType(job: string, pw: string): Rx.Observable<StreamResult<num
 import * as R from "ramda"
 
 function testTriggerType() {
-    let exampleJob = "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/api/json?pretty=true"
-    let trigger$ = getTriggerType(exampleJob, "334c628e5e5df90ae0fabb77db275c54")
+    let exampleJob = "rhsm-rhel-7.5-AllDistros-Tier1Tests"
+    let opts = { tab: "QE-RHEL7.5", job: exampleJob, build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
+    let trigger$ = getTriggerType(opts)
     trigger$.subscribe(i => {
         if (i.length == 0) {
             console.error("Expected at least one trigger by CI")
@@ -267,14 +277,33 @@ function parseCIMessage(msg: Path): Rx.Observable<StreamResult<CIMessageResult>>
     })
 }
 
+function getJobStartTime(opts: URLOpts) {
+    let { job, build, pw, tab } = opts
+    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/api/json?tree=timestamp`
+    let req = ur.get(url)
+        .header("Accept", "application/json")
+        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .strictSSL(false)
+    let req$ = Rx.Observable.bindCallback(req.end)
+    return req$().map(resp => {
+        let d = new Date(resp.body.timestamp)
+        return {
+            type: "ci-time",
+            value: {
+                epoch: resp.body.timestamp,
+                time:  d.toISOString()
+            }
+        }
+    })
+}
 
 /**
  * 
  * @param {*} opt
  */
 function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
-             , job: string
-             , pw: string ) {
+             , urlOpts: URLOpts
+             ) {
     let testngPath = getTestNGXML(opts) // FIXME
     let workspace = getEnv("WORKSPACE")
     if (!workspace) {
@@ -283,16 +312,19 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
     // Assemble our streams
     let ciMessage$ = parseCIMessage(`${workspace}/CI_MESSAGE.json`)  // FIXME: Need path to CI_MESSAGE.json
     ciMessage$.do(r => console.log(`ciMessage$: ${JSON.stringify(r, null, 2)}`))
-    let trigger$ = getTriggerType(job, pw)
+    let trigger$ = getTriggerType(urlOpts)
     let testResults$ = calculateResults(getFile(`${testngPath.path}/testng-polarion.xml`))
+    let jobTime$ = getJobStartTime(urlOpts)
     let data = {
         trigger: "",
         testResults: [],
         brewTaskID: "",
-        components: []
+        components: [],
+        createTime: "",
+        epoch: 0
     }
 
-    Rx.Observable.merge(trigger$, testResults$, ciMessage$)
+    Rx.Observable.merge(trigger$, testResults$, ciMessage$, jobTime$)
         .reduce((acc, res) => {
             switch(res.type) {
                 case "trigger":
@@ -304,6 +336,10 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                 case "ci-message":
                     data.brewTaskID = res.value.brewTaskID
                     data.components = res.value.components
+                    break
+                case "ci-time":
+                    data.createTime = res.value.time
+                    data.epoch = res.value.epoch
                     break
                 default:
                     console.error("Unknown type")
@@ -320,6 +356,7 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                               , failed: tr.failures + tr.errors
                               , passed: tr.passed 
                               } ]
+                let testrunTime = new Date(res.epoch + tr.time)
 
                 let data = {
                     component: res.components[0],
@@ -332,8 +369,8 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                     base_distro: `RHEL ${opts.major}.${opts.minor || ""}`,
                     brew_task_id: res.brewTaskID,
                     compose_id: "",
-                    create_time: "", // FIXME: The start time is not in testng-polarion.xml need to get this
-                    completion_time: "", // FIXME: Once we have the create_time, we can use res.testResults.
+                    create_time: res.createTime, 
+                    completion_time: testrunTime.toISOString(), 
                     CI_infra_failure: "",
                     CI_infra_failure_desc: "",
                     job_name: getEnv("JOB_NAME") || "",
@@ -345,6 +382,8 @@ function main( opts: Distro = {major: 7, variant: "Server", arch: "x8664"}
                 console.log(`data = ${JSON.stringify(data, null, 2)}`)
 
                 // TODO: Send this JSON back as a Promise for the resolver
+                let workspace = getEnv("WORKSPACE") || "/tmp"
+                fs.writeFileSync(`${workspace}/${urlOpts.job}/CI_METRICS.json`, JSON.stringify(data))
             }
         })
 }
@@ -356,5 +395,6 @@ module.exports = {
     getTriggerType: getTriggerType,
     getFile: getFile,
     main: main,
+    getJobStartTime: getJobStartTime,
     parseCIMessage: parseCIMessage
 };

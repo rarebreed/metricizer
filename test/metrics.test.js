@@ -11,6 +11,7 @@ import { getTestNGXML
        , calculateResults
        , getEnv
        , parseCIMessage
+       , getJobStartTime
        , main } from "../src/metrics"
 import * as R from "ramda"
 
@@ -166,8 +167,9 @@ test(`{
     "description": "Tests that we can get the trigger type for a job",
     "type": "integration"
 }`, t => {
-    let exampleJob = "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/api/json?pretty=true"
-    let trigger$ = getTriggerType(exampleJob, "334c628e5e5df90ae0fabb77db275c54")
+    let exampleJob = "rhsm-rhel-7.5-AllDistros-Tier1Tests"
+    let opts = {tab: "QE-RHEL7.5", job: exampleJob, build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
+    let trigger$ = getTriggerType(opts)
     return trigger$.map(i => {
         t.true(i.value === "brew")
     })
@@ -211,11 +213,22 @@ test(`{
 })
 
 test(`{
+    "description": "Tests the getJobStartTime() function returns the proper date",
+    "type": "integration"
+}`, t => {
+    let opts = {tab: "QE-RHEL7.5", job: "rhsm-rhel-7.5-AllDistros-Tier1Tests", build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
+    let jobTime$ = getJobStartTime(opts)
+    return jobTime$.map(time => {
+        t.is(time.value.time, '2017-10-10T01:11:58.523Z')
+        t.is(time.type, "ci-time")
+    })
+})
+
+test(`{
     "description": "Tests the main() function that returns the JSON",
     "type": "integration"
 }`, t => {
-    main({major: 7, variant: "Server", arch: "x86_64"}, 
-    "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-AllDistros-Tier1Tests/13/api/json?pretty=true",
-    "334c628e5e5df90ae0fabb77db275c54")
+    let opts = {tab: "QE-RHEL7.5", job: "rhsm-rhel-7.5-AllDistros-Tier1Tests", build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
+    main({major: 7, variant: "Server", arch: "x86_64"}, opts)
     t.pass()
 })
