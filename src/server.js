@@ -44,7 +44,7 @@ app.post('/cimetrics', jsonParser, (req, resp) => {
     // a failure response
     result.response.subscribe({
         next: n => {
-            resp.send(n).status(200).end()
+            resp.send(JSON.stringify(n, null, 2)).status(200).end()
         },
         error: err => {
             resp.send({

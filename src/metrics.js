@@ -416,7 +416,7 @@ function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
 
     // This is our return object. We use it to pass the calculated JSON data back out.  GraphQL doesn't
     // support Observables, so we "push" the data to the subject, and then we can convert to a Promise
-    let response$ = new Rx.AsyncSubject("{}")
+    let response$ = new Rx.AsyncSubject({})
 
     // This is where all the action happens.  We merge all our streams together.  Most of the logic here
     // is in the reduce.  When the streams are merged, we accumulate the events in the stream into the data
@@ -457,8 +457,8 @@ function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
                     artifact: ""
                 }
 
-                let json = JSON.stringify(data)
-                response$.next(json)
+                //let json = JSON.stringify(data)
+                response$.next(data)
                 response$.complete()
                 // TODO: Hook this into pouchdb and save this off
                 //fs.writeFileSync(`/tmp/CI_METRICS.json`, json)

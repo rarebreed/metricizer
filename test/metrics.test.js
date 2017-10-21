@@ -222,12 +222,11 @@ test(`{
 }`, t => {
     let opts = {tab: "QE-RHEL7.4", job: "rhsm-rhel-7.4-AllDistros-Tier1Tests", build: 61, pw: "334c628e5e5df90ae0fabb77db275c54"}
     let result = main({major: 7, variant: "Server", arch: "x86_64"}, opts)
-    result.response.subscribe({
-        next: n => console.log(JSON.parse(n)),
-        error: err => console.error(err),
-        complete: () => console.log("Calculation now ready")
+    return result.response.map(n => {
+        console.log(JSON.stringify(n, null, 2))
+        t.truthy(n)
+        t.true(n.tests[0].executed == 261)
     })
-    t.pass()
 })
 
 test(`{
