@@ -21,14 +21,36 @@ const root = {
     cidata: server
 }
 
+const bodyParser = require("body-parser")
+const jsonParser = bodyParser.json()
+
 // ==================================================
 // routes go here
 // ==================================================
 var app = express();
+
 app.use('/graphql', graphqlHTTP({
   schema: schema,
   rootValue: root,
   graphiql: true,
-}));
+}))
 
+
+app.post('/cimetrics', jsonParser, (req, resp) => {
+    console.log(req.body)
+    let { distro, jenkins } = req.body
+    let result = main(distro, jenkins)
+    // TODO: Use a setTimeout here so that if we don't respond within a minute, to send
+    // a failure response
+    result.response.subscribe({
+        next: n => {
+            resp.send(n).status(200).end()
+        },
+        error: err => {
+            resp.send({
+                message: "Unable to get CI Metrics JSON"
+            }).status(400).end()
+        }
+    })
+})
 app.listen(4000, () => console.log('Running a GraphQL API server at localhost:4000/graphql'));

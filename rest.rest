@@ -1,0 +1,16 @@
+POST http://localhost:4000/cimetrics HTTP/1.1
+content-type: application/json
+
+{
+    "distro": {
+        "major": 7,
+        "variant": "Server",
+        "arch": "x86_64"
+    },
+    "jenkins": {
+        "tab": "QE-RHEL7.4",
+        "job": "rhsm-rhel-7.4-AllDistros-Tier1Tests",
+        "build": 61,
+        "pw": "334c628e5e5df90ae0fabb77db275c54"
+    }
+}
