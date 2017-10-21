@@ -51,42 +51,6 @@ const getArtifact = (opts: URLOpts, artifact: string) => {
 }
 
 /**
- * Given the major version, variant and arch types, it will look for a job in the $WORKSPACE in order to get the absolute path to the 
- * testng-polarion.xml file
- * 
- * This function is used to find the path to the test-output folder for a given AllDistros type job.  This function is useful 
- * because it allows other functions to get the path the testng-polarion.xml file that is created by a run of this job
- * 
- * @param {*} opts 
- */
-function getTestNGXML(opts: Distro) {
-    let {major, variant, arch} = opts
-    let workspace = getEnv("WORKSPACE")
-    let jobName = getEnv("JOB_NAME")
-    let fullPath = ""
-    let re = /AllDistros.*Tier(\d)/
-    if (workspace == null || jobName == null) {
-        throw new Error("Could not get path for the XML result")
-    }
-
-    let matched = re.exec(jobName)
-    let tier
-    if (matched != null) {
-        fullPath = `${workspace}/${jobName}/PLATFORM/RedHatEnterpriseLinux${major}-${variant}-${arch}/label/rhsm/test-output`
-        tier = matched[1]
-    }
-    else {
-        fullPath = `${workspace}/${jobName}/test-output`
-        tier = 0
-    }
-
-    return {
-        path: fullPath,
-        tier: tier
-    }
-}
-
-/**
  * Given the path to a xml file, convert it to a string
  * 
  * @param {*} path 
@@ -477,7 +441,6 @@ function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
 module.exports = {
     getEnv: getEnv,
     calculateResults: calculateResults,
-    getTestNGXML: getTestNGXML,
     getTriggerType: getTriggerType,
     getFile: getFile,
     main: main,

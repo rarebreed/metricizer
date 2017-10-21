@@ -5,8 +5,7 @@
 import Rx from "rxjs/Rx"
 import test from "ava"
 import fs from "fs"
-import { getTestNGXML
-       , getTriggerType
+import { getTriggerType
        , getFile
        , calculateResults
        , getEnv
@@ -45,118 +44,10 @@ const clean = (path: string) => {
     }
 }
 
-/**
- * Creates a directory emulating the rhsm-rhel-AllDistros-Tier1.
- * 
- * Synchronous
- */
-const mockAllDistrosTier1Job = (): { mockDirResult: boolean, mockDirValue: string } => {
-    
-    let dirs = fakeDirs.split("/")
-    let start = `${workspace}/${jobName}`
-    if (fs.existsSync(`${workspace}`))
-        clean(`${workspace}`)
-    fs.mkdirSync(workspace)
-
-    dirs.reduce((acc: string, d: string) => {
-        acc = `${acc}/${d}`
-        console.log(acc)
-        fs.mkdirSync(acc)
-        return acc
-    }, workspace)
-
-    let path = `${workspace}/${fakeDirs}`
-    console.log(path)
-    return { 
-        mockDirResult: fs.existsSync(path),
-        mockDirValue: path
-    }
-}
-
-// Constants for where the mock directory is
-const { mockDirResult, mockDirValue } = mockAllDistrosTier1Job()
-
-/**
- * Installs the example testng-polarion.xml file to path from mockAllDistros.  
- * 
- * Synchronous
- */
-const installMockXML = (): boolean => {
-    let cwd = process.cwd()
-    let xml = `${cwd}/test/resources/testng-polarion.xml`
-    fs.copyFileSync(xml, `${mockDirValue}/testng-polarion.xml`)  // FIXME: flow says this is an error, but it isn't
-    return fs.existsSync(`${mockDirValue}/testng-polarion.xml`)
-}
-
-//const mockXML = installMockXML()
-
-const uninstallMockXML = (): boolean => {
-    let cwd = process.cwd()
-    let xml = `${cwd}/test/resources/testng-polarion.xml`
-    console.log("Uninstalling testng-polarion.xml")
-    fs.unlink(`${mockDirValue}/testng-polarion.xml`)  // FIXME: flow says this is an error, but it isn't
-    return !fs.existsSync(`${mockDirValue}/testng-polarion.xml`)
-}
-
-const installMsgJSON = (): boolean => {
-    let cwd = process.cwd()
-    let json = `${cwd}/test/resources/CI_MESSAGE.json`
-    fs.copyFileSync(json, `${workspace}/CI_MESSAGE.json`)
-    return fs.existsSync(`${workspace}/CI_MESSAGE.json`)
-}
-
-const uninstallMsgJSON = (): boolean => {
-    let cwd = process.cwd()
-    let json = `${cwd}/test/resources/CI_MESSAGE.json`
-    console.log("Uninstalling CI_MESSAGE.json")
-    fs.unlink(`${workspace}/CI_MESSAGE.json`)
-    return !fs.existsSync(`${workspace}/CI_MESSAGE.json`)
-}
-
-
-/**
- * Creates the necessary Jenkins environment variables
- */
-const setMockJenkinsEnv = () => {
-    process.env["WORKSPACE"] = workspace
-    process.env["JOB_URL"] = "/path/to/jenkins/job/url"
-    process.env["BUILD_URL"] = "/path/to/jenkins/job/url/44"
-    process.env["JOB_NAME"] = jobName
-}
-
-const unsetMockJenkinsEnv = () => {
-    let keys = ["WORKSPACE", "JOB_URL", "BUILD_URL", "JOB_NAME"]
-    keys.forEach(k => process.env[k] = undefined)
-}
-
-test.before("Sets up mock environment", t => {
-    installMockXML()
-    installMsgJSON()
-    setMockJenkinsEnv()
-})
-
-/*
-test.after("Uninstalls mock environment", t => {
-    //uninstallMockXML()
-    //uninstallMsgJSON()
-    unsetMockJenkinsEnv()
-})
-*/
 
 // ========================================================================
 // Begin tests
 // ========================================================================
-
-test(`{
-    "description": "Tests that getTestNGXML works in mocked jenkins environment",
-    "type" : "unit"
-}`, t => {
-    t.plan(1)
-    let {tier, path } = getTestNGXML({major: 7, variant: "Server", arch: "x86_64"})
-    t.is(path, fullFakePath)
-})
-
-
 test(`{
     "description": "Tests that we can get the trigger type for a job",
     "type": "integration"
@@ -178,16 +69,10 @@ test(`{
     let f$ = getFile(`${cwd}/test/resources/testng-polarion.xml`)
     return calculateResults(f$)
         .map(n => {
-            t.pass()
+            console.log(`Calculating results of mocked testng-polarion.xml: ${JSON.stringify(n.value.total, null, 2)}`)
+            t.true(n.value.total.total === 29)
+            t.true(n.value.total.passed === 15)
         })
-})
-
-test(`{
-    "description": "Tests the environment variables through getEnv()",
-    "type": "unit"
-}`, t => {
-    t.is(getEnv("WORKSPACE"), workspace)
-    t.is(getEnv("JOB_URL"), "/path/to/jenkins/job/url")
 })
 
 test(`{
