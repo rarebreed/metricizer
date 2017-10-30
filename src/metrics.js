@@ -203,11 +203,11 @@ function parseCIMessage(file$: Rx.Observable<string>): Rx.Observable<StreamResul
 }
 
 function getJobStartTime(opts: URLOpts) {
-    let { job, build, pw, tab } = opts
-    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/api/json?tree=timestamp`
+    let { job, build, pw, tab, jenkins_url, user } = opts
+    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}/api/json?tree=timestamp`
     let req = ur.get(url)
         .header("Accept", "application/json")
-        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .auth(user, pw, true)
         .strictSSL(false)
     let req$ = Rx.Observable.bindCallback(req.end)
     return req$().map(resp => {
@@ -228,11 +228,11 @@ function getJobStartTime(opts: URLOpts) {
  * @param {*} opts 
  */
 function getInjectedVars(opts: URLOpts): Rx.Observable<{}> {
-    let { tab, job, build, pw} = opts
-    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/injectedEnvVars/export`
+    let { tab, job, build, pw, jenkins_url, user} = opts
+    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}/injectedEnvVars/export`
     let req = ur.get(url)
         .header("Accept", "application/json")
-        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .auth(user, pw, true)
         .strictSSL(false)
     let req$ = Rx.Observable.bindCallback(req.end)
     return req$().map(resp => {

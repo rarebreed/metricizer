@@ -2,11 +2,6 @@
 
 metricizer creates a simple JSON message suitable for the Red Hat CI metrics data
 
-## Configuration
-
-A small configuration file is used to get the jenkins URL, a jenkins user and the password for 
-that user in order to make some jenkins API calls to obtain needed data.
-
 ## Usage
 
 First, install it:
@@ -38,12 +33,14 @@ called /cimetrics.  It takes json data like this:
         "tab": "QE-RHEL7.4",
         "job": "rhsm-rhel-7.4-AllDistros-Tier1Tests",
         "build": 61,
+        "jenkins_url": "http://your.jenkins/url",
+        "user": "your-jenkins-user",
         "pw": "password"
     }
 }
 ```
 
-To use it with curl, you can do this (note that "password" is NOT the password):
+To use it with curl, you can do this (note to fill in valid values for jenkins_url, user and pw):
 
 ```bash
 JSON='{
@@ -56,6 +53,8 @@ JSON='{
         "tab": "QE-RHEL7.4",
         "job": "rhsm-rhel-7.4-AllDistros-Tier1Tests",
         "build": 61,
+        "jenkins_url": "http://your.jenkins/url",
+        "user": "your-jenkins-user",
         "pw": "password"
     }
 }'
@@ -117,3 +116,17 @@ yarn run ava lib/test
 ```
 
 This will run all the tests (that got compiled) from test/metrics.test.js 
+
+### Test Configuration
+
+A small configuration file is used to get the jenkins URL, a jenkins user and the password for 
+that user in order to make some jenkins API calls to obtain needed data.  You can load json file(s)
+with the following data:
+
+```json
+{
+    "jenkins_url": "http://your.jenkins.url",
+    "jenkins_user": "user-for-api-calls",
+    "jenkins_pw": "password-for-user"
+}
+```

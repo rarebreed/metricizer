@@ -40,6 +40,17 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "Debug remote Node (localhost)",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/lib/src/server.js",
+            "address": "localhost",
+            "outFiles": [
+                "${workspaceFolder}/lib/src/**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "Remote debug to rhsm-jenkins-slave4",
             "address": "rhsm-jenkins-slave4.usersys.redhat.com",
             "port": 9229
