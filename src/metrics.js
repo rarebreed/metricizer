@@ -20,33 +20,35 @@ import type { URLOpts
             , PlatformLabel
             } from "metricizer"
 
-const jenkins = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view`
-
 function getEnv(name: string): ?string {
     let s: ?string =  process.env[name]
     return s
 }
 
-const getJenkinsAPI = (url: string, pw: string) => {
+const getJenkinsAPI = (url: string, user: string,pw: string) => {
     let req = ur.get(url)
         .header("Accept", "application/json")
-        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .auth(user, pw, true)
         .strictSSL(false)
     let req$ = Rx.Observable.bindCallback(req.end)
     return req$
 }
 
 const makeURL = (opts: URLOpts, api: string) => {
-    let { job, build, pw, tab } = opts
-    return `${jenkins}/${tab}/job/${job}/${build}${api}`
+    let { job, build, pw, tab, jenkins_url } = opts
+    return `${jenkins_url}/view/${tab}/job/${job}/${build}${api}`
 }
 
 const getArtifact = (opts: URLOpts, artifact: string) => {
     let url = makeURL(opts ,`/artifact/test-output/${artifact}`)
     console.log(`Getting artifact from ${url}`)
-    let req$ = getJenkinsAPI(url, opts.pw)
+    let req$ = getJenkinsAPI(url, opts.user, opts.pw)
     return req$().map(resp => {
-        return resp.body
+            return resp.body
+    })
+    .catch(ex => {
+        console.error("Could not retrieve artifact")
+        return ""
     })
 }
 
@@ -120,11 +122,11 @@ function calculateResults( xml$: Rx.Observable<string> )
  * @param {*} pw 
  */
 function getTriggerType(opts: URLOpts): Rx.Observable<StreamResult<number>> {
-    let { tab, job, build, pw } = opts
-    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}`
+    let { tab, job, build, pw, user, jenkins_url } = opts
+    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}`
     let req = ur.get(`${url}/api/json?pretty=true`)
         .header("Accept", "application/json")
-        .auth("ops-qe-jenkins-ci-automation", pw, true)
+        .auth(user, pw, true)
         .strictSSL(false)
     let req$ = Rx.Observable.bindCallback(req.end)
     // Filter out actions that don't have a cause field, then for each action with a cause, check the cause object for shortDescription
@@ -153,7 +155,7 @@ import * as R from "ramda"
 
 function testTriggerType() {
     let exampleJob = "rhsm-rhel-7.5-AllDistros-Tier1Tests"
-    let opts = { tab: "QE-RHEL7.5", job: exampleJob, build: 13, pw: "334c628e5e5df90ae0fabb77db275c54"}
+    let opts = { tab: "QE-RHEL7.5", job: exampleJob, build: 13, pw: "", jenkins_url: "", user: ""}
     let trigger$ = getTriggerType(opts)
     trigger$.subscribe(i => {
         if (i.length == 0) {
@@ -268,9 +270,9 @@ const getPlatformFromLabel = (label: string) => {
  * @param {*} opts 
  */
 function getMatrixJobLabels(opts: URLOpts): Rx.Observable<PlatformLabel> {
-    let { tab, job, build, pw } = opts
-    let url = `https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/${tab}/job/${job}/${build}/api/json?tree=runs[number,url]`
-    let req$ = getJenkinsAPI(url, pw)
+    let { tab, job, build, pw, user, jenkins_url } = opts
+    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}/api/json?tree=runs[number,url]`
+    let req$ = getJenkinsAPI(url, user, pw)
     let d: PlatformLabel = new Map()
     return req$().mergeMap(resp => {
             let runs: {number: number, url: string}[] = resp.body.runs

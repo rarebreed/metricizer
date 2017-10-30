@@ -2,7 +2,12 @@
 
 metricizer creates a simple JSON message suitable for the Red Hat CI metrics data
 
-# Usage
+## Configuration
+
+A small configuration file is used to get the jenkins URL, a jenkins user and the password for 
+that user in order to make some jenkins API calls to obtain needed data.
+
+## Usage
 
 First, install it:
 

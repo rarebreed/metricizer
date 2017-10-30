@@ -8,9 +8,9 @@ content-type: application/json
         "arch": "x86_64"
     },
     "jenkins": {
-        "tab": "QE-RHEL7.4",
-        "job": "rhsm-rhel-7.4-AllDistros-Tier1Tests",
-        "build": 61,
+        "tab": "QE-RHEL7.5",
+        "job": "rhsm-rhel-7.5-x86_64-Tier1Tests",
+        "build": 43,
         "pw": "334c628e5e5df90ae0fabb77db275c54"
     }
 }

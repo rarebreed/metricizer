@@ -2,6 +2,8 @@
 
 declare module "metricizer" {
     declare export type URLOpts  = {
+        jenkins_url: string,
+        user: string,
         job: string,
         build: number,
         pw: string, 
