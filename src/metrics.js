@@ -39,7 +39,10 @@ const getJenkinsAPI = ( url: string
 
 const makeURL = (opts: URLOpts, api: string): string => {
     let { job, build, pw, tab, jenkins_url } = opts
-    return `${jenkins_url}/view/${tab}/job/${job}/${build}${api}`
+    if (opts.tab !== "")
+        return `${jenkins_url}/view/${tab}/job/${job}/${build}${api}`
+    else
+        return `${jenkins_url}/view/job/${job}/${build}${api}`
 }
 
 const getArtifact = (opts: URLOpts, artifact: string) => {
@@ -126,7 +129,7 @@ function calculateResults( xml$: Rx.Observable<string> )
  */
 function getTriggerType(opts: URLOpts): Rx.Observable<StreamResult<number>> {
     let { tab, job, build, pw, user, jenkins_url } = opts
-    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}`
+    let url = makeURL(opts, "")
     let req = ur.get(`${url}/api/json?pretty=true`)
         .header("Accept", "application/json")
         .auth(user, pw, true)
@@ -207,7 +210,7 @@ function parseCIMessage(file$: Rx.Observable<string>): Rx.Observable<StreamResul
 
 function getJobStartTime(opts: URLOpts) {
     let { job, build, pw, tab, jenkins_url, user } = opts
-    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}/api/json?tree=timestamp`
+    let url = makeURL(opts, "/api/json?tree=timestamp")
     let req = ur.get(url)
         .header("Accept", "application/json")
         .auth(user, pw, true)
@@ -232,7 +235,7 @@ function getJobStartTime(opts: URLOpts) {
  */
 function getInjectedVars(opts: URLOpts): Rx.Observable<{}> {
     let { tab, job, build, pw, jenkins_url, user} = opts
-    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}/injectedEnvVars/export`
+    let url = makeURL(opts, "/injectedEnvVars/export")
     let req = ur.get(url)
         .header("Accept", "application/json")
         .auth(user, pw, true)
@@ -274,7 +277,7 @@ const getPlatformFromLabel = (label: string) => {
  */
 function getMatrixJobLabels(opts: URLOpts): Rx.Observable<PlatformLabel> {
     let { tab, job, build, pw, user, jenkins_url } = opts
-    let url = `${jenkins_url}/view/${tab}/job/${job}/${build}/api/json?tree=runs[number,url]`
+    let url = makeURL(opts, "/api/json?tree=runs[number,url]")
     let req$ = getJenkinsAPI(url, user, pw)
     let d: PlatformLabel = new Map()
     return req$().mergeMap(resp => {

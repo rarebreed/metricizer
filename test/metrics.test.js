@@ -153,7 +153,7 @@ test(`{
 })
 
 test(`{ 
-    "description": "Tests the makeURL() function",
+    "description": "Tests the makeURL() with tab not an empty string function",
     "type": "unit"
 }`, t => {
     let opts = {
@@ -168,6 +168,24 @@ test(`{
     let url = makeURL(opts ,`/artifact/test-output/${artifact}`)
     console.log(`makeURL: ${url}`)
     t.is(url, "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/QE-RHEL7.5/job/rhsm-rhel-7.5-x86_64-Tier1Tests/43/artifact/test-output/testng-polarion.xml")
+})
+
+test(`{ 
+    "description": "Tests the makeURL() with tab as an empty string function",
+    "type": "unit"
+}`, t => {
+    let opts = {
+        job: "rhsm-rhel-7.5-x86_64-Tier1Tests",
+        tab: "",
+        build: 43,
+        pw: jenkins_pw,
+        user: jenkins_user,
+        jenkins_url: jenkins_url
+    }
+    let artifact = "testng-polarion.xml"
+    let url = makeURL(opts ,`/artifact/test-output/${artifact}`)
+    console.log(`makeURL: ${url}`)
+    t.is(url, "https://rhsm-jenkins-rhel7.rhev-ci-vms.eng.rdu2.redhat.com/view/job/rhsm-rhel-7.5-x86_64-Tier1Tests/43/artifact/test-output/testng-polarion.xml")
 })
 
 test(`{

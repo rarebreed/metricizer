@@ -176,4 +176,37 @@ The solution to the above assumptions is to stop making assumptions and pass in 
 }
 ```
 
-If your jobs does not use tabs, then the URL pattern will change to not use it.
+If your jobs does not use tabs, then the URL pattern will change to not use it.  If your team doesn't use tabs to separate out 
+jobs, you can simply pass in an empty string for the tab.
+
+## Future work
+
+metricizer was designed to be a little microservice.  My philosphy is that by trying to write everything as jenkins plugins, 
+while it does simplify some things, it also makes others harder. Trying to implement functionality as jenkins plugins it 
+introduces the following problems:
+
+- Ties down your tests to running via jenkins
+- Causes more devops trouble (every jenkins has to maintain and update new versions of the plugin)
+
+As the old adage goes, "program to interfaces to implementations".  Try not to tie yourself down to a specific implementation.
+That was the guiding principle behind polarize, and it's true for metricizer also.  Let other clients consume your service
+in the way easiest for them instead of burying the functionality behind a jenkins plugins and forcing all the clients to be 
+run from jenkins also.  Since REST (over html) is a near ubiquitous standard, this seems the most logical approach.  And indeed, 
+it wouldn't take much extra to write a jenkins plugin which was just another client to this service.
+
+By writing more functionality as microservices and simply using more ubiquitous REST calls, this eliminates both the problems 
+above, but it does introduce some of its own problems.  However, I think it adds other advantages that are worthwhile:
+
+- Can run your tests on any kind of runner (manual, TeamCity, Travis, etc)
+- Single and centralized point of maintenance (maintain and update in one spot)
+  - More work for one team, less work for everybody else
+
+But the problem is that you now have to maintain the microservices.  Ideally, this would mean the following:
+
+- An Openshift deployment
+- Service discovery
+- Failover
+- Clustering
+
+So for future work, it would be nice to implement a service discovery mechanism and some way to have failover/clustering in the
+event one of the microservices fails and to support the possibility of high loads on the service.
