@@ -130,3 +130,50 @@ with the following data:
     "jenkins_pw": "password-for-user"
 }
 ```
+
+## Some assumptions
+
+The functionality makes a couple of assumptions about a team's jenkins jobs:
+
+- It saves off an artifact called CI_MESSAGE.json (which contains the contents of the message delivered by the UMB to trigger your job) in $YOUR_JOB/artifact/test-output/CI_MESSAGE.json
+- It saves off the xunit result in $YOUR_JOB/artifact/test-output/testng-polarion.xml
+
+Where $YOUR_JOB has a url pattern like this:
+
+```
+`${jenkins_url}/view/${tab}/job/${job}/${build}${api}`
+```
+
+This in turn means that your jenkins jobs are separated out by tabs, because the REST calls will use a URL pattern like that.  
+
+### Future solutions
+
+The solution to the above assumptions is to stop making assumptions and pass in some new arguments:
+
+```json
+{
+    "distro": {
+        "major": 7,
+        "variant": "Server",
+        "arch": "x86_64"
+    },
+    "jenkins": {
+        "tab": "QE-RHEL7.4",
+        "job": "rhsm-rhel-7.4-AllDistros-Tier1Tests",
+        "build": 61,
+        "jenkins_url": "http://your.jenkins/url",
+        "user": "your-jenkins-user",
+        "pw": "password",
+        "message": {
+            "name": "my_ci_msg.json",
+            "artifact-path": "http://path/to/your/artifact/directory"
+        },
+        "xunit": {
+            "name": "name-of-my-xunit.xml",
+            "artifact-path": "http://path/to/your/artifact/directory"
+        } 
+    }
+}
+```
+
+If your jobs does not use tabs, then the URL pattern will change to not use it.
