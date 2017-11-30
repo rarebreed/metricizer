@@ -25,7 +25,10 @@ function getEnv(name: string): ?string {
     return s
 }
 
-const getJenkinsAPI = (url: string, user: string,pw: string) => {
+const getJenkinsAPI = ( url: string
+                      , user: string
+                      , pw: string
+                      ) => {
     let req = ur.get(url)
         .header("Accept", "application/json")
         .auth(user, pw, true)
@@ -34,7 +37,7 @@ const getJenkinsAPI = (url: string, user: string,pw: string) => {
     return req$
 }
 
-const makeURL = (opts: URLOpts, api: string) => {
+const makeURL = (opts: URLOpts, api: string): string => {
     let { job, build, pw, tab, jenkins_url } = opts
     return `${jenkins_url}/view/${tab}/job/${job}/${build}${api}`
 }
@@ -317,7 +320,8 @@ const getJobFromLabel = (label: string) => {
 }
 
 const dataCheck = (res: {type: string, value: any}, data: StreamData) => {
-    // FIXME: This switch feels ugly. But I need to know the res.type in order to merge data together
+    // FIXME: This switch feels ugly. But I need to know the res.type in order to merge data together.  Might be better to use immutable.Map 
+    // and use an update-in kind of function
     switch(res.type) {
         case "trigger":
             data.trigger = res.value
@@ -358,7 +362,7 @@ function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
             return fn(art$)
         })
     }
-    // Assemble our streams  
+    // Assemble our streams.  Recall that these all return streams and are asynchronous
     let trigger$ = getTriggerType(urlOpts)
     let jobTime$ = getJobStartTime(urlOpts)
     let envVars$ = getInjectedVars(urlOpts).map(v => Object.assign({type: "env-vars", value: v}))
@@ -368,7 +372,7 @@ function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
     let testResults$ = artifactStream(labels$, "testng-polarion.xml", calculateResults)
     let ciMessage$ = artifactStream(labels$, "CI_MESSAGE.json", parseCIMessage)
 
-    // This object will accumulate the data from the streams.  Note that we will mutate this value
+    // This object will accumulate the data from the above streams.  Note that we will mutate this value.
     // An alternative would be to use an immutable.Map, or to use Object.assign() to create a new obj
     let data = {
         trigger: "",
@@ -384,7 +388,7 @@ function main( opts: Distro, urlOpts: URLOpts): Rx.AsyncSubject<string> {
     // support Observables, so we "push" the data to the subject, and then we can convert to a Promise
     let response$ = new Rx.AsyncSubject({})
 
-    // This is where all the action happens.  We merge all our streams together.  Most of the logic here
+    // This is where all the action happens and we merge all our streams together.  Most of the logic here
     // is in the reduce.  When the streams are merged, we accumulate the events in the stream into the data
     // object.  Since we use reduce instead of scan, this means each of the merged streams must complete
     // (ie, they must emit the complete event)

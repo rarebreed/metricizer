@@ -77,8 +77,8 @@ Doing this curl command will result in the following output
       "passed": 56
     }
   ],
-  "jenkins_job_url": "http://rhsm-jenkins.rhev-ci-vms.eng.rdu2.redhat.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/",
-  "jenkins_build_url": "http://rhsm-jenkins.rhev-ci-vms.eng.rdu2.redhat.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/61/",
+  "jenkins_job_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/",
+  "jenkins_build_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/61/",
   "logstash_url": "",
   "CI_tier": 1,
   "base_distro": "RHEL 7.",
