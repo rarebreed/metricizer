@@ -1,6 +1,6 @@
 # metricizer
 
-metricizer creates a simple JSON message suitable for the Red Hat CI metrics data
+The metricizer service can create a simple JSON message suitable for the Red Hat CI metrics data
 
 ## Usage
 
@@ -35,7 +35,8 @@ called /cimetrics.  It takes json data like this:
         "build": 61,
         "jenkins_url": "http://your.jenkins/url",
         "user": "your-jenkins-user",
-        "pw": "password"
+        "pw": "password",
+        "template": 
     }
 }
 ```
@@ -179,10 +180,75 @@ The solution to the above assumptions is to stop making assumptions and pass in 
 If your jobs does not use tabs, then the URL pattern will change to not use it.  If your team doesn't use tabs to separate out 
 jobs, you can simply pass in an empty string for the tab.
 
+
+### No assumption on jenkins
+
+The code currently assumes the test runner was jenkins, but it would be nice to remove that and abstract out any of those bits
+so that this service could be used by any kind of test runner (eg Travis, or manually executed).
+
+For the metrics data collection we really need the following pieces of information:
+
+- Information from brew 
+  - Eg.What was the brew ID that built that the rpms
+- Information about the test itself
+  - What was the results of the test
+  - logging information
+- Who or what ran the test
+  - What was the runner of the test (jenkins, manual)?
+
+So what we really need to provide to the service are:
+
+1. The message that came on the UMB from brew
+2. The xunit result file
+3. Information about the test runner
+4. Miscellaneous information passed to service
+
+The first 2 are standardized and so should already work mostly as is.  The harder part will be in getting information about the 
+test runner.
+
+```json
+{
+  "component": "nfs-ganesha-2.5.2-5.el7cp.x86_64.rpm",                                     // #1
+  "trigger": "manual",                                                                     // #1 or #3
+  "tests": [                                                                               // #2
+    {
+      "executor": "beaker",
+      "arch": "x86_64",
+      "executed": 261,
+      "failed": 1,
+      "passed": 56
+    }
+  ],
+  "jenkins_job_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/",       // #3 but this assumption shouldn't be made
+  "jenkins_build_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/61/",  // as above
+  "logstash_url": "",                                                                      // #3
+  "CI_tier": 1,                                                                            // #3 or #2
+  "base_distro": "RHEL 7.",                                                                // #4
+  "brew_task_id": 14275230,                                                                // #1
+  "compose_id": "",                                                                        // #4
+  "create_time": "2017-07-22T16:08:00.595Z",                                               // #2
+  "completion_time": "2017-07-22T16:08:25.957Z",                                           // #2
+  "CI_infra_failure": "",                                                                  // ?
+  "CI_infra_failure_desc": "",                                                             // ?
+  "job_name": "rhsm-rhel-7.4-AllDistros-Tier1Tests",                                       // #3
+  "build_type": "internal",                                                                // #1
+  "team": "rhsm-qe",                                                                       // #4
+  "recipients": [                                                                          // #4
+    "jsefler",
+    "jmolet",
+    "reddaken",
+    "shwetha",
+    "stoner",
+    "jstavel"
+  ],
+  "artifact": ""                                                                            // #3
+}
+```     
+
 ## Future work
 
 metricizer was designed to be a little microservice.  My philosphy is that by trying to write everything as jenkins plugins, 
-while it does simplify some things, it also makes others harder. Trying to implement functionality as jenkins plugins it 
+while it does simplify some things, it also makes others harder. Trying to implement functionality only as jenkins plugins 
 introduces the following problems:
 
 - Ties down your tests to running via jenkins

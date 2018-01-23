@@ -10,6 +10,16 @@ declare module "metricizer" {
         tab: string
     }
 
+    declare export type JenkinsJob  = {
+        jenkins_url: string,
+        user: string,
+        job: string,
+        build: number,
+        pw: string, 
+        tab: string,
+        template: string
+    }
+
     declare export type Calculated = {
         total: number, 
         failures: number, 

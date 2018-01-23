@@ -9,6 +9,7 @@ import * as ur from "unirest"
 //import { buildSchema } from 'graphql'
 import { schema } from "./schema"
 import { main } from "./metrics"
+import { getJFile } from "./utils"
 import type { URLOpts, Distro } from "metricizer"
 import Rx from "rxjs/Rx"
 
@@ -53,6 +54,16 @@ app.post('/cimetrics', jsonParser, (req, resp) => {
             resp.send({
                 message: "Unable to get CI Metrics JSON"
             }).status(400).end()
+        }
+    })
+})
+
+app.get('/file', jsonParser, (req, resp) => {
+    console.log(req.body)
+    let { url, jenkins } = req.body
+    getJFile(jenkins, url).subscribe({
+        next: n => {
+            resp.send(JSON.stringify)
         }
     })
 })

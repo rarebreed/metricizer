@@ -19,54 +19,10 @@ import type { URLOpts
             , CIMessageResult
             , PlatformLabel
             } from "metricizer"
-
-function getEnv(name: string): ?string {
-    let s: ?string =  process.env[name]
-    return s
-}
-
-const getJenkinsAPI = ( url: string
-                      , user: string
-                      , pw: string
-                      ) => {
-    let req = ur.get(url)
-        .header("Accept", "application/json")
-        .auth(user, pw, true)
-        .strictSSL(false)
-    let req$ = Rx.Observable.bindCallback(req.end)
-    return req$
-}
-
-const makeURL = (opts: URLOpts, api: string): string => {
-    let { job, build, pw, tab, jenkins_url } = opts
-    if (opts.tab !== "")
-        return `${jenkins_url}/view/${tab}/job/${job}/${build}${api}`
-    else
-        return `${jenkins_url}/view/job/${job}/${build}${api}`
-}
+import { getEnv, getJenkinsAPI, makeURL, getJenkinsfile, getFile } from "./utils"
 
 const getArtifact = (opts: URLOpts, artifact: string) => {
-    let url = makeURL(opts ,`/artifact/test-output/${artifact}`)
-    console.log(`Getting artifact from ${url}`)
-    let req$ = getJenkinsAPI(url, opts.user, opts.pw)
-    return req$().map(resp => {
-            return resp.body
-    })
-    .catch(ex => {
-        console.error("Could not retrieve artifact")
-        return ""
-    })
-}
-
-/**
- * Given the path to a xml file, convert it to a string
- * 
- * @param {*} path 
- */
-function getFile(path: string) {
-    let readFile$ = Rx.Observable.bindNodeCallback(fs.readFile)
-    let bf$ =  readFile$(path, "utf8").map(b => b.toString())
-    return bf$
+    return getJenkinsfile(opts, `/artifact/test-output/${artifact}`)
 }
 
 /**
@@ -79,7 +35,8 @@ function getFile(path: string) {
 function calculateResults( xml$: Rx.Observable<string> )
                          : Rx.Observable<StreamResult<TestValue>> {
     // xml$ contains the XML as a string.  concat the result of this with x2j.parseString to get the JSON version
-    return xml$.concatMap(s => {
+    return xml$
+        .concatMap(s => {
             let r$ = Rx.Observable.bindCallback(x2j.parseString)
             return r$(s)
         })
@@ -124,8 +81,7 @@ function calculateResults( xml$: Rx.Observable<string> )
  * 
  * NOTE: This function will be used to get the value for the "trigger" field in the JSON to be sent
  * 
- * @param {*} job (eg https://jenkins.server.com/job/rhsm-rhel-7.5-x86_64-Tier1Tests/42/) 
- * @param {*} pw 
+ * @param {*} opts 
  */
 function getTriggerType(opts: URLOpts): Rx.Observable<StreamResult<number>> {
     let { tab, job, build, pw, user, jenkins_url } = opts
