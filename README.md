@@ -2,6 +2,36 @@
 
 The metricizer service can create a simple JSON message suitable for the Red Hat CI metrics data
 
+**NOTE**
+
+The requirements for the data we need to send for metrics collection has changed.  In order to make this tool more flexible and perhaps
+useable by upstream, there needs to be some way to:
+
+- Define the JMS message fields that triggers your tests
+- A template or list of values you need to fill in
+
+## What problem is metricizer solving?
+
+If you have a Continuous Integration setup, then you probably have the following scenario:
+
+1. Devs make a new commit and it passes their unit tests
+2. Some build process takes the code and spits out an artifact or service to test
+3. The artifacts are released to some staged repository and a message is released announcing it
+4. Other tests receive this message or build event hook to kick off tests
+
+So, when you execute your tests, there's a lot of metadata that perhaps your organization would like to know about.  In other words, 
+it's not just the test results that matter, but information about the testing itself.  For example:
+
+- What kind of system did your test run on?  (Openstack, openshift, KVM, bare metal?)
+- What version artifact(s) and their dependency chain were you testing?
+- What platform(s) did you test on? (RHEL 7.5 Server, Fedora 27, Java 8, etc)
+- Was your test sitting in a queue a long time? (ie, it received signal to test, but was bottlenecked by previous tests?)
+
+There are all kinds of information that is important other than the results of the tests itself.  This data needs to be collected
+and reported.  So metricizer is one (for a specific build process) to help do this.
+
+**NOTE** this is a very Red Hat specific tool, however, with some work it could be made more generic.
+
 ## Usage
 
 First, install it:
@@ -63,47 +93,6 @@ JSON='{
 curl -H "Content-Type: application/json" -X POST -d ${JSON} http://localhost:4000/cimetrics
 ```
 
-Doing this curl command will result in the following output
-
-```json
-{
-  "component": "nfs-ganesha-2.5.2-5.el7cp.x86_64.rpm",
-  "trigger": "manual",
-  "tests": [
-    {
-      "executor": "beaker",
-      "arch": "x86_64",
-      "executed": 261,
-      "failed": 1,
-      "passed": 56
-    }
-  ],
-  "jenkins_job_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/",
-  "jenkins_build_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/61/",
-  "logstash_url": "",
-  "CI_tier": 1,
-  "base_distro": "RHEL 7.",
-  "brew_task_id": 14275230,
-  "compose_id": "",
-  "create_time": "2017-07-22T16:08:00.595Z",
-  "completion_time": "2017-07-22T16:08:25.957Z",
-  "CI_infra_failure": "",
-  "CI_infra_failure_desc": "",
-  "job_name": "rhsm-rhel-7.4-AllDistros-Tier1Tests",
-  "build_type": "internal",
-  "team": "rhsm-qe",
-  "recipients": [
-    "jsefler",
-    "jmolet",
-    "reddaken",
-    "shwetha",
-    "stoner",
-    "jstavel"
-  ],
-  "artifact": ""
-}                                          
-```
-
 Note that if the CI_MESSAGE.json does not exist or is invalid (eg a 1b file), then a dummy default
 value is used.  Currently, this is just to prove that metricizer works.  In the future, an error
 will be thrown if the CI_MESSAGE.json was not found as an artifact.
@@ -149,6 +138,9 @@ This in turn means that your jenkins jobs are separated out by tabs, because the
 
 ### Future solutions
 
+Currently, metricizer is very specific to Red Hat's process for CI workflows.  What is needed to make this more generic is to 
+specify a 'pipeline' of sorts
+
 The solution to the above assumptions is to stop making assumptions and pass in some new arguments:
 
 ```json
@@ -188,8 +180,8 @@ so that this service could be used by any kind of test runner (eg Travis, or man
 
 For the metrics data collection we really need the following pieces of information:
 
-- Information from brew 
-  - Eg.What was the brew ID that built that the rpms
+- Information from whatever builds your product artifact(s)
+  - Eg.What was the koji ID that built that the rpms
 - Information about the test itself
   - What was the results of the test
   - logging information
@@ -198,52 +190,10 @@ For the metrics data collection we really need the following pieces of informati
 
 So what we really need to provide to the service are:
 
-1. The message that came on the UMB from brew
+1. The message that came on the UMB from your build process
 2. The xunit result file
 3. Information about the test runner
 4. Miscellaneous information passed to service
-
-The first 2 are standardized and so should already work mostly as is.  The harder part will be in getting information about the 
-test runner.
-
-```json
-{
-  "component": "nfs-ganesha-2.5.2-5.el7cp.x86_64.rpm",                                     // #1
-  "trigger": "manual",                                                                     // #1 or #3
-  "tests": [                                                                               // #2
-    {
-      "executor": "beaker",
-      "arch": "x86_64",
-      "executed": 261,
-      "failed": 1,
-      "passed": 56
-    }
-  ],
-  "jenkins_job_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/",       // #3 but this assumption shouldn't be made
-  "jenkins_build_url": "http://redacted.com/job/rhsm-rhel-7.4-AllDistros-Tier1Tests/61/",  // as above
-  "logstash_url": "",                                                                      // #3
-  "CI_tier": 1,                                                                            // #3 or #2
-  "base_distro": "RHEL 7.",                                                                // #4
-  "brew_task_id": 14275230,                                                                // #1
-  "compose_id": "",                                                                        // #4
-  "create_time": "2017-07-22T16:08:00.595Z",                                               // #2
-  "completion_time": "2017-07-22T16:08:25.957Z",                                           // #2
-  "CI_infra_failure": "",                                                                  // ?
-  "CI_infra_failure_desc": "",                                                             // ?
-  "job_name": "rhsm-rhel-7.4-AllDistros-Tier1Tests",                                       // #3
-  "build_type": "internal",                                                                // #1
-  "team": "rhsm-qe",                                                                       // #4
-  "recipients": [                                                                          // #4
-    "jsefler",
-    "jmolet",
-    "reddaken",
-    "shwetha",
-    "stoner",
-    "jstavel"
-  ],
-  "artifact": ""                                                                            // #3
-}
-```     
 
 ## Future work
 
